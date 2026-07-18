@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
+const mongoose = require('mongoose');
+const Image = require('../models/Image');
 
 // Dynamic SVG default avatar placeholder
 const DEFAULT_AVATAR_SVG = `
@@ -26,11 +25,6 @@ const DEFAULT_COVER_SVG = `
 </svg>
 `.trim();
 
-// Use /tmp for uploads on Vercel, otherwise local directory
-const uploadDir = process.env.VERCEL
-  ? path.join(os.tmpdir(), 'uploads')
-  : path.join(__dirname, '../uploads');
-
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -45,12 +39,18 @@ router.get('/:id', async (req, res) => {
       return res.send(DEFAULT_COVER_SVG);
     }
 
-    const filePath = path.join(uploadDir, id);
-    if (!fs.existsSync(filePath)) {
+    // Check if ID is a valid MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ success: false, error: 'Invalid Image ID format' });
+    }
+
+    const img = await Image.findById(id);
+    if (!img) {
       return res.status(404).json({ success: false, error: 'Image not found' });
     }
 
-    res.sendFile(filePath);
+    res.set('Content-Type', img.contentType);
+    return res.send(img.data);
   } catch (error) {
     console.error('Error retrieving media:', error);
     res.status(500).json({ success: false, error: 'Server error' });

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Post = require('../models/Post');
+const Image = require('../models/Image');
 
 // @desc    Get user profile by ID
 // @route   GET /api/users/:id
@@ -83,15 +84,43 @@ const updateUserProfile = async (req, res) => {
     user.bio = bio !== undefined ? bio : user.bio;
     user.location = location !== undefined ? location : user.location;
 
+    // Helper to delete database images that are replaced
+    const deleteImageIfDatabaseImage = async (imageUrl) => {
+      if (imageUrl && imageUrl.startsWith('/uploads/')) {
+        const imageId = imageUrl.split('/').pop();
+        if (mongoose.Types.ObjectId.isValid(imageId)) {
+          await Image.deleteOne({ _id: imageId });
+        }
+      }
+    };
+
     // Handle files if uploaded via multer
     if (req.files) {
       if (req.files.profilePicture) {
         const file = req.files.profilePicture[0];
-        user.profilePicture = `/uploads/${file.filename}`;
+        // Delete old profile picture if it's a database image and not default
+        if (user.profilePicture && user.profilePicture !== '/uploads/default-avatar.png') {
+          await deleteImageIfDatabaseImage(user.profilePicture);
+        }
+        const newImg = await Image.create({
+          data: file.buffer,
+          contentType: file.mimetype,
+          size: file.size
+        });
+        user.profilePicture = `/uploads/${newImg._id}`;
       }
       if (req.files.coverPhoto) {
         const file = req.files.coverPhoto[0];
-        user.coverPhoto = `/uploads/${file.filename}`;
+        // Delete old cover photo if it's a database image and not default
+        if (user.coverPhoto && user.coverPhoto !== '/uploads/default-cover.png') {
+          await deleteImageIfDatabaseImage(user.coverPhoto);
+        }
+        const newImg = await Image.create({
+          data: file.buffer,
+          contentType: file.mimetype,
+          size: file.size
+        });
+        user.coverPhoto = `/uploads/${newImg._id}`;
       }
     }
 

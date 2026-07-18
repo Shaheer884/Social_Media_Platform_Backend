@@ -2,6 +2,8 @@ const Post = require('../models/Post');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Comment = require('../models/Comment');
+const mongoose = require('mongoose');
+const Image = require('../models/Image');
 
 // @desc    Get post feed (followed users + own posts)
 // @route   GET /api/posts
@@ -75,7 +77,12 @@ const createPost = async (req, res) => {
 
     // Handle uploaded file if present
     if (req.file) {
-      imageUrl = `/uploads/${req.file.filename}`;
+      const newImg = await Image.create({
+        data: req.file.buffer,
+        contentType: req.file.mimetype,
+        size: req.file.size
+      });
+      imageUrl = `/uploads/${newImg._id}`;
     } else if (imageUrlUrl) {
       let formattedUrl = imageUrlUrl.trim();
       if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
@@ -181,9 +188,27 @@ const updatePost = async (req, res) => {
 
     post.content = content || post.content;
 
+    // Helper to delete database images that are replaced
+    const deleteImageIfDatabaseImage = async (imageUrl) => {
+      if (imageUrl && imageUrl.startsWith('/uploads/')) {
+        const imageId = imageUrl.split('/').pop();
+        if (mongoose.Types.ObjectId.isValid(imageId)) {
+          await Image.deleteOne({ _id: imageId });
+        }
+      }
+    };
+
     // Handle file upload or image url
     if (req.file) {
-      post.imageUrl = `/uploads/${req.file.filename}`;
+      if (post.imageUrl) {
+        await deleteImageIfDatabaseImage(post.imageUrl);
+      }
+      const newImg = await Image.create({
+        data: req.file.buffer,
+        contentType: req.file.mimetype,
+        size: req.file.size
+      });
+      post.imageUrl = `/uploads/${newImg._id}`;
     } else if (imageUrlUrl) {
       let formattedUrl = imageUrlUrl.trim();
       if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
@@ -223,6 +248,21 @@ const deletePost = async (req, res) => {
 
     // Delete post comments
     await Comment.deleteMany({ post: post._id });
+
+    // Helper to delete database images
+    const deleteImageIfDatabaseImage = async (imageUrl) => {
+      if (imageUrl && imageUrl.startsWith('/uploads/')) {
+        const imageId = imageUrl.split('/').pop();
+        if (mongoose.Types.ObjectId.isValid(imageId)) {
+          await Image.deleteOne({ _id: imageId });
+        }
+      }
+    };
+
+    // Delete associated image from MongoDB
+    if (post.imageUrl) {
+      await deleteImageIfDatabaseImage(post.imageUrl);
+    }
 
     // Delete post itself
     await Post.deleteOne({ _id: post._id });
