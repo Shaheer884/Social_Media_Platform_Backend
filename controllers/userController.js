@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Post = require('../models/Post');
 const Image = require('../models/Image');
+const Comment = require('../models/Comment');
 
 // @desc    Get user profile by ID
 // @route   GET /api/users/:id
@@ -413,6 +414,86 @@ const searchUsers = async (req, res) => {
   }
 };
 
+// @desc    Delete user account and all associated data (posts, comments, likes, notifications, follows, images)
+// @route   DELETE /api/users/:id
+// @access  Protected
+const deleteUserAccount = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Check authorization
+    if (userId !== req.user.id) {
+      return res.status(401).json({ success: false, error: 'Not authorized to delete this account' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // 1. Delete user's comments
+    await Comment.deleteMany({ author: userId });
+
+    // 2. Delete user's posts and comments on those posts
+    const userPosts = await Post.find({ author: userId });
+    const userPostIds = userPosts.map(p => p._id);
+    
+    // Delete comments on these posts
+    await Comment.deleteMany({ post: { $in: userPostIds } });
+    
+    // Delete the posts themselves
+    await Post.deleteMany({ author: userId });
+
+    // 3. Remove user's ID from other users' followers and following lists
+    await User.updateMany(
+      { followers: userId },
+      { $pull: { followers: userId } }
+    );
+    await User.updateMany(
+      { following: userId },
+      { $pull: { following: userId } }
+    );
+
+    // 4. Remove user's ID from the likes array of all remaining posts
+    await Post.updateMany(
+      { likes: userId },
+      { $pull: { likes: userId } }
+    );
+
+    // 5. Delete all notifications sent by or received by this user
+    await Notification.deleteMany({
+      $or: [
+        { sender: userId },
+        { recipient: userId }
+      ]
+    });
+
+    // 6. Delete profile and cover images from database if they are stored in Image collection
+    const deleteImageIfDatabaseImage = async (imageUrl) => {
+      if (imageUrl && imageUrl.startsWith('/uploads/')) {
+        const imageId = imageUrl.split('/').pop();
+        if (mongoose.Types.ObjectId.isValid(imageId)) {
+          await Image.deleteOne({ _id: imageId });
+        }
+      }
+    };
+    if (user.profilePicture && user.profilePicture !== '/uploads/default-avatar.png') {
+      await deleteImageIfDatabaseImage(user.profilePicture);
+    }
+    if (user.coverPhoto && user.coverPhoto !== '/uploads/default-cover.png') {
+      await deleteImageIfDatabaseImage(user.coverPhoto);
+    }
+
+    // 7. Finally delete the user document
+    await User.deleteOne({ _id: userId });
+
+    res.json({ success: true, message: 'Account and all associated data deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error during account deletion' });
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateUserProfile,
@@ -421,5 +502,6 @@ module.exports = {
   followUser,
   unfollowUser,
   getFollowSuggestions,
-  searchUsers
+  searchUsers,
+  deleteUserAccount
 };

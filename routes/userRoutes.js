@@ -8,7 +8,8 @@ const {
   followUser,
   unfollowUser,
   getFollowSuggestions,
-  searchUsers
+  searchUsers,
+  deleteUserAccount
 } = require('../controllers/userController');
 const upload = require('../middleware/uploadMiddleware');
 
@@ -18,6 +19,7 @@ const router = express.Router();
 router.get('/explore/search', protect, searchUsers);
 router.get('/explore/suggestions', protect, getFollowSuggestions);
 router.get('/:id', protect, getUserProfile);
+router.delete('/:id', protect, deleteUserAccount);
 router.put(
   '/:id',
   protect,
