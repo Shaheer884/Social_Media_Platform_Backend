@@ -9,7 +9,8 @@ const {
   unfollowUser,
   getFollowSuggestions,
   searchUsers,
-  deleteUserAccount
+  deleteUserAccount,
+  removeFollower
 } = require('../controllers/userController');
 const upload = require('../middleware/uploadMiddleware');
 
@@ -35,5 +36,6 @@ router.get('/:id/followers', protect, getUserFollowers);
 router.get('/:id/following', protect, getUserFollowing);
 router.post('/:id/follow', protect, followUser);
 router.delete('/:id/follow', protect, unfollowUser);
+router.delete('/:id/follower', protect, removeFollower);
 
 module.exports = router;

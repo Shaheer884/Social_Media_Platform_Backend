@@ -494,6 +494,37 @@ const deleteUserAccount = async (req, res) => {
   }
 };
 
+// @desc    Remove a follower
+// @route   DELETE /api/users/:id/follower
+// @access  Protected
+const removeFollower = async (req, res) => {
+  try {
+    const followerToRemove = await User.findById(req.params.id);
+    const currentUser = await User.findById(req.user.id);
+
+    if (!followerToRemove) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Remove followerToRemove from currentUser's followers list
+    currentUser.followers = currentUser.followers.filter(
+      (id) => id.toString() !== req.params.id
+    );
+    // Remove currentUser from followerToRemove's following list
+    followerToRemove.following = followerToRemove.following.filter(
+      (id) => id.toString() !== req.user.id
+    );
+
+    await currentUser.save();
+    await followerToRemove.save();
+
+    res.json({ success: true, message: 'Successfully removed follower' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateUserProfile,
@@ -503,5 +534,6 @@ module.exports = {
   unfollowUser,
   getFollowSuggestions,
   searchUsers,
-  deleteUserAccount
+  deleteUserAccount,
+  removeFollower
 };
