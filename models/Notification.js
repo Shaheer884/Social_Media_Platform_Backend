@@ -8,7 +8,7 @@ const NotificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['like', 'comment', 'follow'],
+    enum: ['like', 'comment', 'follow', 'story-like'],
     required: true
   },
   sender: {
@@ -19,6 +19,10 @@ const NotificationSchema = new mongoose.Schema({
   post: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Post'
+  },
+  story: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Story'
   },
   read: {
     type: Boolean,

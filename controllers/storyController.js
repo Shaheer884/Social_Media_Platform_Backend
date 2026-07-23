@@ -1,6 +1,7 @@
 const Story = require('../models/Story');
 const User = require('../models/User');
 const Image = require('../models/Image');
+const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
 
 // @desc    Get all active stories (own + followed users) from last 24h
@@ -164,9 +165,81 @@ const deleteStory = async (req, res) => {
   }
 };
 
+// @desc    Like a story
+// @route   POST /api/stories/:id/like
+// @access  Protected
+const likeStory = async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id);
+
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    if (story.likes.includes(req.user.id)) {
+      return res.status(400).json({ success: false, error: 'Story already liked' });
+    }
+
+    story.likes.push(req.user.id);
+    await story.save();
+
+    // Create Notification (only if user likes someone else's story)
+    if (story.user.toString() !== req.user.id) {
+      await Notification.create({
+        recipient: story.user,
+        type: 'story-like',
+        sender: req.user.id,
+        story: story._id
+      });
+    }
+
+    res.json({ success: true, message: 'Story liked successfully', likes: story.likes });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Unlike a story
+// @route   DELETE /api/stories/:id/like
+// @access  Protected
+const unlikeStory = async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id);
+
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    if (!story.likes.includes(req.user.id)) {
+      return res.status(400).json({ success: false, error: 'Story has not been liked' });
+    }
+
+    story.likes = story.likes.filter((userId) => userId.toString() !== req.user.id);
+    await story.save();
+
+    // Delete matching Notification if any
+    if (story.user.toString() !== req.user.id) {
+      await Notification.deleteOne({
+        recipient: story.user,
+        type: 'story-like',
+        sender: req.user.id,
+        story: story._id
+      });
+    }
+
+    res.json({ success: true, message: 'Story unliked successfully', likes: story.likes });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   getStories,
   createStory,
   updateStory,
-  deleteStory
+  deleteStory,
+  likeStory,
+  unlikeStory
 };

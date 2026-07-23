@@ -19,7 +19,13 @@ const StorySchema = new mongoose.Schema(
     backgroundColor: {
       type: String,
       default: 'linear-gradient(135deg, #8b5cf6, #ec4899)'
-    }
+    },
+    likes: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ]
   },
   {
     timestamps: true
