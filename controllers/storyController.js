@@ -42,7 +42,15 @@ const getStories = async (req, res) => {
 
     // Prioritize current user's stories to be first
     const currentUserStories = groupedArray.find((g) => g.user._id.toString() === req.user.id);
-    const otherUserStories = groupedArray.filter((g) => g.user._id.toString() !== req.user.id);
+    
+    // Sort other users' stories so that the one with the newest story is first (newest activity first)
+    const otherUserStories = groupedArray
+      .filter((g) => g.user._id.toString() !== req.user.id)
+      .sort((a, b) => {
+        const timeA = new Date(a.stories[a.stories.length - 1].createdAt).getTime();
+        const timeB = new Date(b.stories[b.stories.length - 1].createdAt).getTime();
+        return timeB - timeA; // Descending: newest first
+      });
 
     const result = [];
     if (currentUserStories) {
