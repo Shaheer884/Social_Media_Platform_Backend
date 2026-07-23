@@ -47,6 +47,7 @@ const userRoutes = require('./routes/userRoutes');
 const postRoutes = require('./routes/postRoutes');
 const commentRoutes = require('./routes/commentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const storyRoutes = require('./routes/storyRoutes');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -54,6 +55,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/stories', storyRoutes);
 
 // Serve static frontend files if folder exists
 const clientPath = path.join(__dirname, '../client');
