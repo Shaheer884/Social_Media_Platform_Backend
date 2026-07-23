@@ -31,6 +31,9 @@ const UserSchema = new mongoose.Schema({
     required: [true, 'Please add a full name'],
     trim: true
   },
+  birthday: {
+    type: Date
+  },
   bio: {
     type: String,
     default: ''

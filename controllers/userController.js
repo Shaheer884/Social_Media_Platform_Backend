@@ -54,7 +54,8 @@ const getUserProfile = async (req, res) => {
         following: user.following,
         postCount,
         createdAt: user.createdAt,
-        relationshipStatus
+        relationshipStatus,
+        birthday: user.birthday
       }
     });
   } catch (error) {
@@ -79,11 +80,14 @@ const updateUserProfile = async (req, res) => {
       return res.status(401).json({ success: false, error: 'User not authorized to edit this profile' });
     }
 
-    const { fullName, bio, location, profilePictureUrl, coverPhotoUrl } = req.body;
+    const { fullName, bio, location, birthday, profilePictureUrl, coverPhotoUrl } = req.body;
 
     user.fullName = fullName || user.fullName;
     user.bio = bio !== undefined ? bio : user.bio;
     user.location = location !== undefined ? location : user.location;
+    if (birthday !== undefined) {
+      user.birthday = birthday ? new Date(birthday) : null;
+    }
 
     // Helper to delete database images that are replaced
     const deleteImageIfDatabaseImage = async (imageUrl) => {
@@ -156,7 +160,8 @@ const updateUserProfile = async (req, res) => {
         coverPhoto: updatedUser.coverPhoto,
         followersCount: updatedUser.followers.length,
         followingCount: updatedUser.following.length,
-        createdAt: updatedUser.createdAt
+        createdAt: updatedUser.createdAt,
+        birthday: updatedUser.birthday
       }
     });
   } catch (error) {
