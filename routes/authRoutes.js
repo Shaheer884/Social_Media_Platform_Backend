@@ -13,8 +13,19 @@ router.post(
     check('email', 'Please include a valid email')
       .isEmail()
       .normalizeEmail(),
-    check('password', 'Please enter a password with 6 or more characters')
-      .isLength({ min: 6 }),
+    check('password')
+      .isLength({ min: 6 })
+      .withMessage('Password must be at least 6 characters')
+      .custom((value) => {
+        const hasUppercase = /[A-Z]/.test(value);
+        const hasLowercase = /[a-z]/.test(value);
+        const hasNumber = /[0-9]/.test(value);
+        const hasSpecial = /[\W_]/.test(value);
+        if (!hasUppercase || !hasLowercase || !hasNumber || !hasSpecial) {
+          throw new Error('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character');
+        }
+        return true;
+      }),
     check('fullName', 'Full name is required')
       .trim()
       .not()
