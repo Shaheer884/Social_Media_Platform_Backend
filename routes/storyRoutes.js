@@ -6,7 +6,8 @@ const {
   updateStory,
   deleteStory,
   likeStory,
-  unlikeStory
+  unlikeStory,
+  commentStory
 } = require('../controllers/storyController');
 const upload = require('../middleware/uploadMiddleware');
 
@@ -18,5 +19,6 @@ router.put('/:id', protect, updateStory);
 router.delete('/:id', protect, deleteStory);
 router.post('/:id/like', protect, likeStory);
 router.delete('/:id/like', protect, unlikeStory);
+router.post('/:id/comment', protect, commentStory);
 
 module.exports = router;

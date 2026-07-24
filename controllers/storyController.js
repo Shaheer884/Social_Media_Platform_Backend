@@ -23,6 +23,7 @@ const getStories = async (req, res) => {
       createdAt: { $gte: activeTime }
     })
       .populate('user', 'username fullName profilePicture')
+      .populate('comments.user', 'username fullName profilePicture')
       .sort({ createdAt: 1 }); // Chronological order
 
     // Group stories by user
@@ -95,7 +96,9 @@ const createStory = async (req, res) => {
       backgroundColor: backgroundColor || 'linear-gradient(135deg, #8b5cf6, #ec4899)'
     });
 
-    const populatedStory = await Story.findById(story._id).populate('user', 'username fullName profilePicture');
+    const populatedStory = await Story.findById(story._id)
+      .populate('user', 'username fullName profilePicture')
+      .populate('comments.user', 'username fullName profilePicture');
 
     res.status(201).json({ success: true, data: populatedStory });
   } catch (error) {
@@ -235,11 +238,59 @@ const unlikeStory = async (req, res) => {
   }
 };
 
+// @desc    Comment on a story
+// @route   POST /api/stories/:id/comment
+// @access  Protected
+const commentStory = async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ success: false, error: 'Comment text is required' });
+    }
+
+    const story = await Story.findById(req.params.id);
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    const comment = {
+      user: req.user.id,
+      text: text.trim()
+    };
+
+    story.comments.push(comment);
+    await story.save();
+
+    const populatedStory = await Story.findById(story._id)
+      .populate('user', 'username fullName profilePicture')
+      .populate('comments.user', 'username fullName profilePicture');
+
+    // Get the newly added comment with populated user
+    const addedComment = populatedStory.comments[populatedStory.comments.length - 1];
+
+    // Create Notification (only if user comments on someone else's story)
+    if (story.user.toString() !== req.user.id) {
+      await Notification.create({
+        recipient: story.user,
+        type: 'story-comment',
+        sender: req.user.id,
+        story: story._id
+      });
+    }
+
+    res.json({ success: true, comment: addedComment });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   getStories,
   createStory,
   updateStory,
   deleteStory,
   likeStory,
-  unlikeStory
+  unlikeStory,
+  commentStory
 };
