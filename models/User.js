@@ -68,6 +68,14 @@ const UserSchema = new mongoose.Schema({
       ref: 'Post'
     }
   ],
+  profilePicturePublicId: {
+    type: String,
+    default: ''
+  },
+  coverPhotoPublicId: {
+    type: String,
+    default: ''
+  },
   createdAt: {
     type: Date,
     default: Date.now

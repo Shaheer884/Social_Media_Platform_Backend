@@ -16,6 +16,19 @@ const PostSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    mediaUrl: {
+      type: String,
+      default: ''
+    },
+    mediaType: {
+      type: String,
+      enum: ['image', 'video', 'none'],
+      default: 'none'
+    },
+    cloudinaryPublicId: {
+      type: String,
+      default: ''
+    },
     likes: [
       {
         type: mongoose.Schema.Types.ObjectId,

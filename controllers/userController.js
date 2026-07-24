@@ -4,6 +4,7 @@ const Notification = require('../models/Notification');
 const Post = require('../models/Post');
 const Image = require('../models/Image');
 const Comment = require('../models/Comment');
+const { cloudinary, uploadStream } = require('../config/cloudinary');
 
 // @desc    Get user profile by ID
 // @route   GET /api/users/:id
@@ -89,12 +90,13 @@ const updateUserProfile = async (req, res) => {
       user.birthday = birthday ? new Date(birthday) : null;
     }
 
-    // Helper to delete database images that are replaced
-    const deleteImageIfDatabaseImage = async (imageUrl) => {
-      if (imageUrl && imageUrl.startsWith('/uploads/')) {
-        const imageId = imageUrl.split('/').pop();
-        if (mongoose.Types.ObjectId.isValid(imageId)) {
-          await Image.deleteOne({ _id: imageId });
+    // Helper to delete old Cloudinary image
+    const deleteCloudinaryImage = async (publicId) => {
+      if (publicId) {
+        try {
+          await cloudinary.uploader.destroy(publicId);
+        } catch (err) {
+          console.error('Failed to delete Cloudinary profile media:', err);
         }
       }
     };
@@ -103,29 +105,21 @@ const updateUserProfile = async (req, res) => {
     if (req.files) {
       if (req.files.profilePicture) {
         const file = req.files.profilePicture[0];
-        // Delete old profile picture if it's a database image and not default
-        if (user.profilePicture && user.profilePicture !== '/uploads/default-avatar.png') {
-          await deleteImageIfDatabaseImage(user.profilePicture);
+        if (user.profilePicturePublicId) {
+          await deleteCloudinaryImage(user.profilePicturePublicId);
         }
-        const newImg = await Image.create({
-          data: file.buffer,
-          contentType: file.mimetype,
-          size: file.size
-        });
-        user.profilePicture = `/uploads/${newImg._id}`;
+        const result = await uploadStream(file.buffer, 'connecthub/profiles/avatars', 'image');
+        user.profilePicture = result.secure_url;
+        user.profilePicturePublicId = result.public_id;
       }
       if (req.files.coverPhoto) {
         const file = req.files.coverPhoto[0];
-        // Delete old cover photo if it's a database image and not default
-        if (user.coverPhoto && user.coverPhoto !== '/uploads/default-cover.png') {
-          await deleteImageIfDatabaseImage(user.coverPhoto);
+        if (user.coverPhotoPublicId) {
+          await deleteCloudinaryImage(user.coverPhotoPublicId);
         }
-        const newImg = await Image.create({
-          data: file.buffer,
-          contentType: file.mimetype,
-          size: file.size
-        });
-        user.coverPhoto = `/uploads/${newImg._id}`;
+        const result = await uploadStream(file.buffer, 'connecthub/profiles/covers', 'image');
+        user.coverPhoto = result.secure_url;
+        user.coverPhotoPublicId = result.public_id;
       }
     }
 
@@ -135,14 +129,22 @@ const updateUserProfile = async (req, res) => {
       if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
         formattedUrl = 'https://' + formattedUrl;
       }
+      if (user.profilePicturePublicId) {
+        await deleteCloudinaryImage(user.profilePicturePublicId);
+      }
       user.profilePicture = formattedUrl;
+      user.profilePicturePublicId = '';
     }
     if (coverPhotoUrl && (!req.files || !req.files.coverPhoto)) {
       let formattedUrl = coverPhotoUrl.trim();
       if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
         formattedUrl = 'https://' + formattedUrl;
       }
+      if (user.coverPhotoPublicId) {
+        await deleteCloudinaryImage(user.coverPhotoPublicId);
+      }
       user.coverPhoto = formattedUrl;
+      user.coverPhotoPublicId = '';
     }
 
     const updatedUser = await user.save();
@@ -446,6 +448,17 @@ const deleteUserAccount = async (req, res) => {
     // Delete comments on these posts
     await Comment.deleteMany({ post: { $in: userPostIds } });
     
+    // Delete all posts' media from Cloudinary
+    for (const p of userPosts) {
+      if (p.cloudinaryPublicId) {
+        try {
+          await cloudinary.uploader.destroy(p.cloudinaryPublicId, { resource_type: p.mediaType || 'image' });
+        } catch (err) {
+          console.error('Failed to delete Cloudinary asset of user post upon account deletion:', err);
+        }
+      }
+    }
+
     // Delete the posts themselves
     await Post.deleteMany({ author: userId });
 
@@ -473,20 +486,21 @@ const deleteUserAccount = async (req, res) => {
       ]
     });
 
-    // 6. Delete profile and cover images from database if they are stored in Image collection
-    const deleteImageIfDatabaseImage = async (imageUrl) => {
-      if (imageUrl && imageUrl.startsWith('/uploads/')) {
-        const imageId = imageUrl.split('/').pop();
-        if (mongoose.Types.ObjectId.isValid(imageId)) {
-          await Image.deleteOne({ _id: imageId });
+    // 6. Delete profile and cover images from Cloudinary
+    const deleteCloudinaryImage = async (publicId) => {
+      if (publicId) {
+        try {
+          await cloudinary.uploader.destroy(publicId);
+        } catch (err) {
+          console.error('Failed to delete Cloudinary profile media upon account deletion:', err);
         }
       }
     };
-    if (user.profilePicture && user.profilePicture !== '/uploads/default-avatar.png') {
-      await deleteImageIfDatabaseImage(user.profilePicture);
+    if (user.profilePicturePublicId) {
+      await deleteCloudinaryImage(user.profilePicturePublicId);
     }
-    if (user.coverPhoto && user.coverPhoto !== '/uploads/default-cover.png') {
-      await deleteImageIfDatabaseImage(user.coverPhoto);
+    if (user.coverPhotoPublicId) {
+      await deleteCloudinaryImage(user.coverPhotoPublicId);
     }
 
     // 7. Finally delete the user document
