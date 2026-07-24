@@ -14,11 +14,13 @@ const getPostFeed = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Get current user following list
+    // Get current user details and their saved posts list
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
+
+    const savedPostIds = (user.savedPosts || []).map((id) => id.toString());
 
     // Feed includes followed users' posts + own posts
     const feedUserIds = [...user.following, user._id];
@@ -41,7 +43,8 @@ const getPostFeed = async (req, res) => {
           ...post._doc,
           commentCount,
           likesCount: post.likes.length,
-          isLiked: post.likes.includes(req.user.id)
+          isLiked: post.likes.includes(req.user.id),
+          isSaved: savedPostIds.includes(post._id.toString())
         };
       })
     );
@@ -108,7 +111,8 @@ const createPost = async (req, res) => {
         ...populatedPost._doc,
         commentCount: 0,
         likesCount: 0,
-        isLiked: false
+        isLiked: false,
+        isSaved: false
       }
     });
   } catch (error) {
@@ -152,6 +156,9 @@ const getPostById = async (req, res) => {
       };
     });
 
+    const user = await User.findById(req.user.id);
+    const isSaved = user && user.savedPosts ? user.savedPosts.includes(post._id) : false;
+
     res.json({
       success: true,
       data: {
@@ -159,7 +166,8 @@ const getPostById = async (req, res) => {
         commentCount,
         likesCount: post.likes.length,
         likes: likesWithStatus,
-        isLiked: post.likes.some((likeUser) => likeUser._id.toString() === req.user.id)
+        isLiked: post.likes.some((likeUser) => likeUser._id.toString() === req.user.id),
+        isSaved
       }
     });
   } catch (error) {
@@ -264,6 +272,12 @@ const deletePost = async (req, res) => {
       await deleteImageIfDatabaseImage(post.imageUrl);
     }
 
+    // Remove from savedPosts of all users
+    await User.updateMany(
+      { savedPosts: post._id },
+      { $pull: { savedPosts: post._id } }
+    );
+
     // Delete post itself
     await Post.deleteOne({ _id: post._id });
 
@@ -339,6 +353,9 @@ const unlikePost = async (req, res) => {
 // @access  Protected
 const getUserPosts = async (req, res) => {
   try {
+    const currentUser = await User.findById(req.user.id);
+    const savedPostIds = currentUser ? (currentUser.savedPosts || []).map(id => id.toString()) : [];
+
     const posts = await Post.find({ author: req.params.userId })
       .populate('author', 'username fullName profilePicture')
       .sort({ createdAt: -1 });
@@ -350,10 +367,115 @@ const getUserPosts = async (req, res) => {
           ...post._doc,
           commentCount,
           likesCount: post.likes.length,
-          isLiked: post.likes.includes(req.user.id)
+          isLiked: post.likes.includes(req.user.id),
+          isSaved: savedPostIds.includes(post._id.toString())
         };
       })
     );
+
+    res.json({ success: true, data: postsWithDetails });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Save a post to user's bookmarks
+// @route   POST /api/posts/:id/save
+// @access  Protected
+const savePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (!user.savedPosts) {
+      user.savedPosts = [];
+    }
+
+    if (user.savedPosts.includes(post._id)) {
+      return res.status(400).json({ success: false, error: 'Post already saved' });
+    }
+
+    user.savedPosts.push(post._id);
+    await user.save();
+
+    res.json({ success: true, message: 'Post saved successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Remove a post from user's bookmarks
+// @route   DELETE /api/posts/:id/save
+// @access  Protected
+const unsavePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (!user.savedPosts || !user.savedPosts.includes(post._id)) {
+      return res.status(400).json({ success: false, error: 'Post has not been saved' });
+    }
+
+    user.savedPosts = user.savedPosts.filter((id) => id.toString() !== post._id.toString());
+    await user.save();
+
+    res.json({ success: true, message: 'Post unsaved successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Get all saved posts of the user
+// @route   GET /api/posts/saved
+// @access  Protected
+const getSavedPosts = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).populate({
+      path: 'savedPosts',
+      populate: {
+        path: 'author',
+        select: 'username fullName profilePicture'
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const validSavedPosts = (user.savedPosts || []).filter(post => post !== null);
+
+    const postsWithDetails = await Promise.all(
+      validSavedPosts.map(async (post) => {
+        const commentCount = await Comment.countDocuments({ post: post._id });
+        return {
+          ...post._doc,
+          commentCount,
+          likesCount: post.likes.length,
+          isLiked: post.likes.includes(req.user.id),
+          isSaved: true
+        };
+      })
+    );
+
+    // Newest saved first
+    postsWithDetails.reverse();
 
     res.json({ success: true, data: postsWithDetails });
   } catch (error) {
@@ -370,5 +492,8 @@ module.exports = {
   deletePost,
   likePost,
   unlikePost,
-  getUserPosts
+  getUserPosts,
+  savePost,
+  unsavePost,
+  getSavedPosts
 };
