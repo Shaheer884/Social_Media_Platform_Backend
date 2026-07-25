@@ -23,15 +23,21 @@ const registerUser = async (req, res) => {
   const { username, email, password, fullName } = req.body;
 
   try {
-    // Check if user exists
-    const userExists = await User.findOne({ 
-      $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] 
-    });
-
-    if (userExists) {
+    // Check if username already exists
+    const usernameExists = await User.findOne({ username: username.toLowerCase() });
+    if (usernameExists) {
       return res.status(400).json({ 
         success: false, 
-        error: 'User already exists with that username or email' 
+        error: 'Username is already taken' 
+      });
+    }
+
+    // Check if email already exists
+    const emailExists = await User.findOne({ email: email.toLowerCase() });
+    if (emailExists) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email is already registered' 
       });
     }
 
