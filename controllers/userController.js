@@ -81,7 +81,19 @@ const updateUserProfile = async (req, res) => {
       return res.status(401).json({ success: false, error: 'User not authorized to edit this profile' });
     }
 
-    const { fullName, bio, location, birthday, profilePictureUrl, coverPhotoUrl } = req.body;
+    const { username, fullName, bio, location, birthday, profilePictureUrl, coverPhotoUrl } = req.body;
+
+    if (username && username.trim().toLowerCase() !== user.username.toLowerCase()) {
+      const targetUsername = username.trim().toLowerCase();
+      if (targetUsername.length < 3) {
+        return res.status(400).json({ success: false, error: 'Username must be at least 3 characters' });
+      }
+      const existingUser = await User.findOne({ username: targetUsername });
+      if (existingUser) {
+        return res.status(400).json({ success: false, error: 'Username is already taken' });
+      }
+      user.username = targetUsername;
+    }
 
     user.fullName = fullName || user.fullName;
     user.bio = bio !== undefined ? bio : user.bio;
