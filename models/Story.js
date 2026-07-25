@@ -16,6 +16,11 @@ const StorySchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    mediaType: {
+      type: String,
+      enum: ['image', 'video'],
+      default: 'image'
+    },
     backgroundColor: {
       type: String,
       default: 'linear-gradient(135deg, #8b5cf6, #ec4899)'

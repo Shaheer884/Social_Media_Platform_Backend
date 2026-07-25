@@ -74,6 +74,7 @@ const createStory = async (req, res) => {
   try {
     const { text, backgroundColor } = req.body;
     let imageUrl = '';
+    let mediaType = 'image';
 
     // Handle file upload if present
     if (req.file) {
@@ -83,16 +84,20 @@ const createStory = async (req, res) => {
         size: req.file.size
       });
       imageUrl = `/uploads/${newImg._id}`;
+      if (req.file.mimetype && req.file.mimetype.startsWith('video/')) {
+        mediaType = 'video';
+      }
     }
 
     if (!text && !imageUrl) {
-      return res.status(400).json({ success: false, error: 'Story must have either text or an image' });
+      return res.status(400).json({ success: false, error: 'Story must have either text or an image/video' });
     }
 
     const story = await Story.create({
       user: req.user.id,
       text: text || '',
       imageUrl,
+      mediaType,
       backgroundColor: backgroundColor || 'linear-gradient(135deg, #8b5cf6, #ec4899)'
     });
 
