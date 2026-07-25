@@ -22,6 +22,8 @@ const getNotifications = async (req, res) => {
         relationshipStatus = 'friends';
       } else if (isFollowing) {
         relationshipStatus = 'following';
+      } else if (isFollowedBy) {
+        relationshipStatus = 'follow_back';
       }
 
       // Convert mongoose document to plain object to dynamically attach field

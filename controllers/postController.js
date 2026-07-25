@@ -157,6 +157,8 @@ const getPostById = async (req, res) => {
         relationshipStatus = 'friends';
       } else if (isFollowing) {
         relationshipStatus = 'following';
+      } else if (isFollowedBy) {
+        relationshipStatus = 'follow_back';
       }
 
       return {
