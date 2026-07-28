@@ -73,34 +73,89 @@ const createPost = async (req, res) => {
   try {
     const { content, imageUrlUrl } = req.body;
 
-    if (!content && !req.file && !imageUrlUrl) {
-      return res.status(400).json({ success: false, error: 'Post must contain content or an image' });
+    const files = req.files || [];
+
+    if (!content && files.length === 0 && !imageUrlUrl) {
+      return res.status(400).json({ success: false, error: 'Post must contain content or media' });
     }
 
-    let imageUrl = '';
-    let mediaUrl = '';
-    let mediaType = 'none';
-    let cloudinaryPublicId = '';
+    const media = [];
 
-    // Handle uploaded file if present
-    if (req.file) {
-      const isVideo = req.file.mimetype.startsWith('video/');
-      const resourceType = isVideo ? 'video' : 'image';
-      
-      const result = await uploadStream(req.file.buffer, 'connecthub/posts', resourceType);
-      
-      mediaUrl = result.secure_url;
-      imageUrl = result.secure_url; // Backward compatibility
-      mediaType = result.resource_type; // 'image' or 'video'
-      cloudinaryPublicId = result.public_id;
+    // 1. Validate files if present
+    if (files.length > 0) {
+      for (const file of files) {
+        const isVideo = file.mimetype.startsWith('video/');
+        const isImage = file.mimetype.startsWith('image/');
+
+        if (!isVideo && !isImage) {
+          return res.status(400).json({
+            success: false,
+            error: `Unsupported file type for file: ${file.originalname}. Only JPEG, JPG, PNG, WEBP and MP4, MOV, WEBM are supported.`
+          });
+        }
+
+        if (isImage && file.size > 5 * 1024 * 1024) {
+          return res.status(400).json({
+            success: false,
+            error: `Image ${file.originalname} exceeds the 5MB size limit.`
+          });
+        }
+
+        if (isVideo && file.size > 100 * 1024 * 1024) {
+          return res.status(400).json({
+            success: false,
+            error: `Video ${file.originalname} exceeds the 100MB size limit.`
+          });
+        }
+      }
+
+      // 2. Upload files to Cloudinary
+      for (const file of files) {
+        const isVideo = file.mimetype.startsWith('video/');
+        const resourceType = isVideo ? 'video' : 'image';
+        const folder = isVideo ? 'connecthub/posts/videos' : 'connecthub/posts/images';
+
+        const result = await uploadStream(file.buffer, folder, resourceType);
+
+        media.push({
+          url: result.secure_url,
+          publicId: result.public_id,
+          resourceType: result.resource_type || resourceType,
+          format: result.format,
+          width: result.width,
+          height: result.height,
+          duration: result.duration || 0,
+          size: result.bytes
+        });
+      }
     } else if (imageUrlUrl) {
       let formattedUrl = imageUrlUrl.trim();
       if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
         formattedUrl = 'https://' + formattedUrl;
       }
-      imageUrl = formattedUrl;
-      mediaUrl = formattedUrl;
-      mediaType = 'image';
+      media.push({
+        url: formattedUrl,
+        publicId: 'external_url_' + Date.now(),
+        resourceType: 'image',
+        format: 'external',
+        width: 0,
+        height: 0,
+        duration: 0,
+        size: 0
+      });
+    }
+
+    // Set legacy fields for backward compatibility
+    let imageUrl = '';
+    let mediaUrl = '';
+    let mediaType = 'none';
+    let cloudinaryPublicId = '';
+
+    if (media.length > 0) {
+      imageUrl = media[0].url;
+      mediaUrl = media[0].url;
+      mediaType = media[0].resourceType;
+      cloudinaryPublicId = media[0].publicId;
     }
 
     const newPost = await Post.create({
@@ -109,7 +164,8 @@ const createPost = async (req, res) => {
       imageUrl,
       mediaUrl,
       mediaType,
-      cloudinaryPublicId
+      cloudinaryPublicId,
+      media
     });
 
     const populatedPost = await Post.findById(newPost._id).populate(
@@ -128,8 +184,8 @@ const createPost = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: 'Server error' });
+    console.error('Error creating post:', error);
+    res.status(500).json({ success: false, error: 'Server error creating post' });
   }
 };
 
@@ -207,45 +263,119 @@ const updatePost = async (req, res) => {
     }
 
     const { content, imageUrlUrl } = req.body;
-
     post.content = content !== undefined ? content : post.content;
 
-    // Helper to delete old Cloudinary media
-    const deleteCloudinaryMedia = async (publicId, type) => {
-      if (publicId) {
+    // 1. Determine remaining media
+    let remainingMedia = [];
+    if (req.body.existingMedia) {
+      try {
+        remainingMedia = JSON.parse(req.body.existingMedia);
+      } catch (err) {
+        remainingMedia = [];
+      }
+    } else {
+      // Default to keeping current media if existingMedia field not sent
+      remainingMedia = post.media || [];
+    }
+
+    // 2. Identify removed media and delete from Cloudinary
+    const remainingPublicIds = remainingMedia.map((m) => m.publicId);
+    const removedMedia = (post.media || []).filter((m) => !remainingPublicIds.includes(m.publicId));
+
+    for (const m of removedMedia) {
+      if (m.publicId && !m.publicId.startsWith('external_url_')) {
         try {
-          await cloudinary.uploader.destroy(publicId, { resource_type: type || 'image' });
+          await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
         } catch (err) {
-          console.error('Failed to delete Cloudinary media:', err);
+          console.error('Failed to delete Cloudinary media during edit:', err);
         }
       }
-    };
+    }
 
-    // Handle file upload or image url
-    if (req.file) {
-      if (post.cloudinaryPublicId) {
-        await deleteCloudinaryMedia(post.cloudinaryPublicId, post.mediaType);
+    // 3. Validate new files if any
+    const files = req.files || [];
+    const newMediaItems = [];
+
+    if (files.length > 0) {
+      for (const file of files) {
+        const isVideo = file.mimetype.startsWith('video/');
+        const isImage = file.mimetype.startsWith('image/');
+
+        if (!isVideo && !isImage) {
+          return res.status(400).json({
+            success: false,
+            error: `Unsupported file type for file: ${file.originalname}. Only JPEG, JPG, PNG, WEBP and MP4, MOV, WEBM are supported.`
+          });
+        }
+
+        if (isImage && file.size > 5 * 1024 * 1024) {
+          return res.status(400).json({
+            success: false,
+            error: `Image ${file.originalname} exceeds the 5MB size limit.`
+          });
+        }
+
+        if (isVideo && file.size > 100 * 1024 * 1024) {
+          return res.status(400).json({
+            success: false,
+            error: `Video ${file.originalname} exceeds the 100MB size limit.`
+          });
+        }
       }
-      const isVideo = req.file.mimetype.startsWith('video/');
-      const resourceType = isVideo ? 'video' : 'image';
-      
-      const result = await uploadStream(req.file.buffer, 'connecthub/posts', resourceType);
-      
-      post.mediaUrl = result.secure_url;
-      post.imageUrl = result.secure_url;
-      post.mediaType = result.resource_type;
-      post.cloudinaryPublicId = result.public_id;
+
+      // 4. Upload new files to Cloudinary
+      for (const file of files) {
+        const isVideo = file.mimetype.startsWith('video/');
+        const resourceType = isVideo ? 'video' : 'image';
+        const folder = isVideo ? 'connecthub/posts/videos' : 'connecthub/posts/images';
+
+        const result = await uploadStream(file.buffer, folder, resourceType);
+
+        newMediaItems.push({
+          url: result.secure_url,
+          publicId: result.public_id,
+          resourceType: result.resource_type || resourceType,
+          format: result.format,
+          width: result.width,
+          height: result.height,
+          duration: result.duration || 0,
+          size: result.bytes
+        });
+      }
     } else if (imageUrlUrl) {
-      if (post.cloudinaryPublicId) {
-        await deleteCloudinaryMedia(post.cloudinaryPublicId, post.mediaType);
+      // If client sent imageUrlUrl and we didn't have it before
+      const hasUrl = remainingMedia.some(m => m.url === imageUrlUrl.trim());
+      if (!hasUrl) {
+        let formattedUrl = imageUrlUrl.trim();
+        if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
+          formattedUrl = 'https://' + formattedUrl;
+        }
+        newMediaItems.push({
+          url: formattedUrl,
+          publicId: 'external_url_' + Date.now(),
+          resourceType: 'image',
+          format: 'external',
+          width: 0,
+          height: 0,
+          duration: 0,
+          size: 0
+        });
       }
-      let formattedUrl = imageUrlUrl.trim();
-      if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
-        formattedUrl = 'https://' + formattedUrl;
-      }
-      post.imageUrl = formattedUrl;
-      post.mediaUrl = formattedUrl;
-      post.mediaType = 'image';
+    }
+
+    // Combine remaining and new media
+    post.media = [...remainingMedia, ...newMediaItems];
+
+    // Update legacy fields for backward compatibility
+    if (post.media.length > 0) {
+      post.imageUrl = post.media[0].url;
+      post.mediaUrl = post.media[0].url;
+      post.mediaType = post.media[0].resourceType;
+      post.cloudinaryPublicId = post.media[0].publicId;
+    } else {
+      post.imageUrl = '';
+      post.mediaUrl = '';
+      post.mediaType = 'none';
       post.cloudinaryPublicId = '';
     }
 
@@ -257,8 +387,8 @@ const updatePost = async (req, res) => {
 
     res.json({ success: true, data: populated });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: 'Server error' });
+    console.error('Error updating post:', error);
+    res.status(500).json({ success: false, error: 'Server error updating post' });
   }
 };
 
@@ -282,11 +412,22 @@ const deletePost = async (req, res) => {
     await Comment.deleteMany({ post: post._id });
 
     // Delete associated media from Cloudinary
-    if (post.cloudinaryPublicId) {
+    if (post.media && post.media.length > 0) {
+      for (const m of post.media) {
+        if (m.publicId && !m.publicId.startsWith('external_url_')) {
+          try {
+            await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+          } catch (err) {
+            console.error('Failed to delete Cloudinary asset upon post deletion:', err);
+          }
+        }
+      }
+    } else if (post.cloudinaryPublicId) {
+      // Fallback for posts without the media array
       try {
         await cloudinary.uploader.destroy(post.cloudinaryPublicId, { resource_type: post.mediaType || 'image' });
       } catch (err) {
-        console.error('Failed to delete Cloudinary asset upon post deletion:', err);
+        console.error('Failed to delete Cloudinary asset fallback upon post deletion:', err);
       }
     }
 
@@ -301,8 +442,8 @@ const deletePost = async (req, res) => {
 
     res.json({ success: true, message: 'Post removed' });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: 'Server error' });
+    console.error('Error deleting post:', error);
+    res.status(500).json({ success: false, error: 'Server error deleting post' });
   }
 };
 

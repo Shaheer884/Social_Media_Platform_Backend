@@ -29,7 +29,28 @@ const uploadStream = (fileBuffer, folder = 'connecthub', resourceType = 'auto') 
   });
 };
 
+/**
+ * Deletes an asset from Cloudinary using its public ID.
+ * @param {string} publicId - The public ID of the resource to delete.
+ * @param {string} resourceType - The resource type ('image', 'video', 'raw').
+ * @returns {Promise<object>} Cloudinary deletion result.
+ */
+const deleteMedia = (publicId, resourceType = 'image') => {
+  if (!publicId) return Promise.resolve({ result: 'not_found' });
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.destroy(
+      publicId,
+      { resource_type: resourceType || 'image' },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+  });
+};
+
 module.exports = {
   cloudinary,
-  uploadStream
+  uploadStream,
+  deleteMedia
 };

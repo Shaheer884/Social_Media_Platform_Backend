@@ -19,11 +19,11 @@ const router = express.Router();
 
 // Post routes
 router.get('/', protect, getPostFeed);
-router.post('/', protect, upload.single('postImage'), createPost);
+router.post('/', protect, upload.any(), createPost);
 router.get('/saved', protect, getSavedPosts);
 router.get('/user/:userId', protect, getUserPosts);
 router.get('/:id', protect, getPostById);
-router.put('/:id', protect, upload.single('postImage'), updatePost);
+router.put('/:id', protect, upload.any(), updatePost);
 router.delete('/:id', protect, deletePost);
 
 // Like routes

@@ -21,6 +21,22 @@ const StorySchema = new mongoose.Schema(
       enum: ['image', 'video'],
       default: 'image'
     },
+    cloudinaryPublicId: {
+      type: String,
+      default: ''
+    },
+    media: [
+      {
+        url: { type: String, required: true },
+        publicId: { type: String, required: true },
+        resourceType: { type: String, required: true },
+        format: { type: String },
+        width: { type: Number },
+        height: { type: Number },
+        duration: { type: Number },
+        size: { type: Number }
+      }
+    ],
     backgroundColor: {
       type: String,
       default: 'linear-gradient(135deg, #8b5cf6, #ec4899)'

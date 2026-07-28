@@ -117,6 +117,27 @@ const updateUserProfile = async (req, res) => {
 
     // Handle files if uploaded via multer
     if (req.files) {
+      // 1. Validate files first
+      if (req.files.profilePicture) {
+        const file = req.files.profilePicture[0];
+        if (!file.mimetype.startsWith('image/')) {
+          return res.status(400).json({ success: false, error: 'Profile picture must be an image file' });
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          return res.status(400).json({ success: false, error: 'Profile picture exceeds the 5MB size limit.' });
+        }
+      }
+      if (req.files.coverPhoto) {
+        const file = req.files.coverPhoto[0];
+        if (!file.mimetype.startsWith('image/')) {
+          return res.status(400).json({ success: false, error: 'Cover photo must be an image file' });
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          return res.status(400).json({ success: false, error: 'Cover photo exceeds the 5MB size limit.' });
+        }
+      }
+
+      // 2. Upload files if valid
       if (req.files.profilePicture) {
         const file = req.files.profilePicture[0];
         if (user.profilePicturePublicId) {
@@ -472,11 +493,21 @@ const deleteUserAccount = async (req, res) => {
     
     // Delete all posts' media from Cloudinary
     for (const p of userPosts) {
-      if (p.cloudinaryPublicId) {
+      if (p.media && p.media.length > 0) {
+        for (const m of p.media) {
+          if (m.publicId && !m.publicId.startsWith('external_url_')) {
+            try {
+              await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+            } catch (err) {
+              console.error('Failed to delete Cloudinary asset of user post upon account deletion:', err);
+            }
+          }
+        }
+      } else if (p.cloudinaryPublicId) {
         try {
           await cloudinary.uploader.destroy(p.cloudinaryPublicId, { resource_type: p.mediaType || 'image' });
         } catch (err) {
-          console.error('Failed to delete Cloudinary asset of user post upon account deletion:', err);
+          console.error('Failed to delete Cloudinary asset fallback of user post upon account deletion:', err);
         }
       }
     }
@@ -484,7 +515,31 @@ const deleteUserAccount = async (req, res) => {
     // Delete the posts themselves
     await Post.deleteMany({ author: userId });
 
-    // 3. Remove user's ID from other users' followers and following lists
+    // 3. Delete user's stories and story media from Cloudinary
+    const Story = require('../models/Story');
+    const userStories = await Story.find({ user: userId });
+    for (const story of userStories) {
+      if (story.media && story.media.length > 0) {
+        for (const m of story.media) {
+          if (m.publicId) {
+            try {
+              await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+            } catch (err) {
+              console.error('Failed to delete user story media from Cloudinary upon account deletion:', err);
+            }
+          }
+        }
+      } else if (story.cloudinaryPublicId) {
+        try {
+          await cloudinary.uploader.destroy(story.cloudinaryPublicId, { resource_type: story.mediaType || 'image' });
+        } catch (err) {
+          console.error('Failed to delete user story media from Cloudinary upon account deletion:', err);
+        }
+      }
+    }
+    await Story.deleteMany({ user: userId });
+
+    // 4. Remove user's ID from other users' followers and following lists
     await User.updateMany(
       { followers: userId },
       { $pull: { followers: userId } }
@@ -494,13 +549,13 @@ const deleteUserAccount = async (req, res) => {
       { $pull: { following: userId } }
     );
 
-    // 4. Remove user's ID from the likes array of all remaining posts
+    // 5. Remove user's ID from the likes array of all remaining posts
     await Post.updateMany(
       { likes: userId },
       { $pull: { likes: userId } }
     );
 
-    // 5. Delete all notifications sent by or received by this user
+    // 6. Delete all notifications sent by or received by this user
     await Notification.deleteMany({
       $or: [
         { sender: userId },
@@ -508,7 +563,7 @@ const deleteUserAccount = async (req, res) => {
       ]
     });
 
-    // 6. Delete profile and cover images from Cloudinary
+    // 7. Delete profile and cover images from Cloudinary
     const deleteCloudinaryImage = async (publicId) => {
       if (publicId) {
         try {
@@ -525,12 +580,12 @@ const deleteUserAccount = async (req, res) => {
       await deleteCloudinaryImage(user.coverPhotoPublicId);
     }
 
-    // 7. Finally delete the user document
+    // 8. Finally delete the user document
     await User.deleteOne({ _id: userId });
 
     res.json({ success: true, message: 'Account and all associated data deleted successfully' });
   } catch (error) {
-    console.error(error);
+    console.error('Error in account deletion:', error);
     res.status(500).json({ success: false, error: 'Server error during account deletion' });
   }
 };

@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Image = require('../models/Image');
 const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
+const { cloudinary, uploadStream } = require('../config/cloudinary');
 
 // @desc    Get all active stories (own + followed users) from last 24h
 // @route   GET /api/stories
@@ -75,18 +76,54 @@ const createStory = async (req, res) => {
     const { text, backgroundColor } = req.body;
     let imageUrl = '';
     let mediaType = 'image';
+    let cloudinaryPublicId = '';
+    const media = [];
 
     // Handle file upload if present
     if (req.file) {
-      const newImg = await Image.create({
-        data: req.file.buffer,
-        contentType: req.file.mimetype,
-        size: req.file.size
-      });
-      imageUrl = `/uploads/${newImg._id}`;
-      if (req.file.mimetype && req.file.mimetype.startsWith('video/')) {
-        mediaType = 'video';
+      const isVideo = req.file.mimetype.startsWith('video/');
+      const isImage = req.file.mimetype.startsWith('image/');
+
+      if (!isVideo && !isImage) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported file type: ${req.file.originalname}. Only JPEG, JPG, PNG, WEBP and MP4, MOV, WEBM are supported.`
+        });
       }
+
+      if (isImage && req.file.size > 5 * 1024 * 1024) {
+        return res.status(400).json({
+          success: false,
+          error: `Image ${req.file.originalname} exceeds the 5MB size limit.`
+        });
+      }
+
+      if (isVideo && req.file.size > 100 * 1024 * 1024) {
+        return res.status(400).json({
+          success: false,
+          error: `Video ${req.file.originalname} exceeds the 100MB size limit.`
+        });
+      }
+
+      const resourceType = isVideo ? 'video' : 'image';
+      const folder = isVideo ? 'connecthub/stories/videos' : 'connecthub/stories/images';
+
+      const result = await uploadStream(req.file.buffer, folder, resourceType);
+
+      imageUrl = result.secure_url;
+      mediaType = result.resource_type || resourceType;
+      cloudinaryPublicId = result.public_id;
+
+      media.push({
+        url: result.secure_url,
+        publicId: result.public_id,
+        resourceType: result.resource_type || resourceType,
+        format: result.format,
+        width: result.width,
+        height: result.height,
+        duration: result.duration || 0,
+        size: result.bytes
+      });
     }
 
     if (!text && !imageUrl) {
@@ -98,6 +135,8 @@ const createStory = async (req, res) => {
       text: text || '',
       imageUrl,
       mediaType,
+      cloudinaryPublicId,
+      media,
       backgroundColor: backgroundColor || 'linear-gradient(135deg, #8b5cf6, #ec4899)'
     });
 
@@ -107,8 +146,8 @@ const createStory = async (req, res) => {
 
     res.status(201).json({ success: true, data: populatedStory });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: 'Server error' });
+    console.error('Error creating story:', error);
+    res.status(500).json({ success: false, error: 'Server error creating story' });
   }
 };
 
@@ -156,11 +195,22 @@ const deleteStory = async (req, res) => {
       return res.status(401).json({ success: false, error: 'Not authorized to delete this story' });
     }
 
-    // Delete associated image if it's a database upload
-    if (story.imageUrl && story.imageUrl.startsWith('/uploads/')) {
-      const imageId = story.imageUrl.split('/').pop();
-      if (mongoose.Types.ObjectId.isValid(imageId)) {
-        await Image.deleteOne({ _id: imageId });
+    // Delete associated media from Cloudinary
+    if (story.cloudinaryPublicId) {
+      try {
+        await cloudinary.uploader.destroy(story.cloudinaryPublicId, { resource_type: story.mediaType || 'image' });
+      } catch (err) {
+        console.error('Failed to delete Cloudinary asset of story:', err);
+      }
+    } else if (story.media && story.media.length > 0) {
+      for (const m of story.media) {
+        if (m.publicId) {
+          try {
+            await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+          } catch (err) {
+            console.error('Failed to delete Cloudinary asset of story in media array:', err);
+          }
+        }
       }
     }
 
@@ -168,8 +218,8 @@ const deleteStory = async (req, res) => {
 
     res.json({ success: true, message: 'Story deleted successfully' });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: 'Server error' });
+    console.error('Error deleting story:', error);
+    res.status(500).json({ success: false, error: 'Server error deleting story' });
   }
 };
 

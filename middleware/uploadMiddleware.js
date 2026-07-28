@@ -7,17 +7,17 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   fileFilter: function (req, file, cb) {
-    const filetypes = /jpeg|jpg|png|webp|gif|mp4|mov|avi|mkv|webm/;
+    const filetypes = /jpeg|jpg|png|webp|mp4|mov|webm/;
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = filetypes.test(file.mimetype);
 
     if (mimetype && extname) {
       return cb(null, true);
     } else {
-      cb(new Error('Images and Videos only!'));
+      cb(new Error('Only JPEG, JPG, PNG, WEBP images and MP4, MOV, WEBM videos are allowed!'));
     }
   },
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 });
 
 module.exports = upload;
