@@ -23,6 +23,21 @@ const protect = async (req, res, next) => {
         return res.status(401).json({ success: false, error: 'User not found' });
       }
 
+      // Block unverified users from other protected endpoints, but allow verification requests
+      if (
+        req.user.isVerified === false &&
+        !(
+          req.baseUrl === '/api/auth' &&
+          (req.path === '/verify' || req.path === '/resend-verification')
+        )
+      ) {
+        return res.status(403).json({
+          success: false,
+          error: 'Account not verified. Please verify your email.',
+          requiresVerification: true
+        });
+      }
+
       next();
     } catch (error) {
       console.error(error);
