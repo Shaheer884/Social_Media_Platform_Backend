@@ -125,23 +125,28 @@ const loginUser = async (req, res) => {
       ]
     });
 
-    if (user && (await user.matchPassword(password))) {
-      res.json({
-        success: true,
-        data: {
-          _id: user._id,
-          username: user.username,
-          email: user.email,
-          fullName: user.fullName,
-          profilePicture: user.profilePicture,
-          coverPhoto: user.coverPhoto,
-          isVerified: user.isVerified,
-          token: generateToken(user._id)
-        }
-      });
-    } else {
-      res.status(401).json({ success: false, error: 'Invalid credentials' });
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Email or username does not exist' });
     }
+
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, error: 'Incorrect password' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+        profilePicture: user.profilePicture,
+        coverPhoto: user.coverPhoto,
+        isVerified: user.isVerified,
+        token: generateToken(user._id)
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, error: 'Server error' });
