@@ -88,6 +88,22 @@ const UserSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  resetPasswordCode: {
+    type: String,
+    default: null
+  },
+  resetPasswordExpires: {
+    type: Date,
+    default: null
+  },
+  resetPasswordAttempts: {
+    type: Number,
+    default: 0
+  },
+  resetPasswordVerified: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now

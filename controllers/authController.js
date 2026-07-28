@@ -259,9 +259,246 @@ const resendVerificationCode = async (req, res) => {
   }
 };
 
+// @desc    Forgot password - generate & send OTP
+// @route   POST /api/auth/forgot-password
+// @access  Public
+const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ success: false, error: 'Please enter your email' });
+  }
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    // Security: Do not expose whether the email exists
+    const genericResponse = {
+      success: true,
+      message: 'If this email is registered, a password reset code has been sent.'
+    };
+
+    if (!user) {
+      return res.status(200).json(genericResponse);
+    }
+
+    // Generate random 6-digit OTP
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+
+    user.resetPasswordCode = resetCode;
+    user.resetPasswordExpires = resetExpires;
+    user.resetPasswordAttempts = 0;
+    user.resetPasswordVerified = false;
+    await user.save();
+
+    // Send email helper
+    const sendEmail = require('../utils/sendEmail');
+    await sendEmail({
+      to: user.email,
+      subject: 'ConnectHub Password Reset Code',
+      text: `Hello ${user.fullName},\n\nYou requested a password reset. Your 6-digit verification code is: ${resetCode}.\n\nThis code is valid for 10 minutes. For security reasons, please DO NOT share this code with anyone.\n\nIf you did not request this, please ignore this email.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #8b5cf6; text-align: center;">Reset Your ConnectHub Password</h2>
+          <p>Hello <strong>${user.fullName}</strong>,</p>
+          <p>You requested a password reset. Please use the following 6-digit verification code to verify your request and reset your password:</p>
+          <div style="font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; margin: 30px 0; padding: 15px; background-color: #f1f5f9; border-radius: 6px; color: #0f172a;">
+            ${resetCode}
+          </div>
+          <p style="color: #ef4444; font-weight: 600; text-align: center;">This code will expire in 10 minutes.</p>
+          <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px; margin: 20px 0; border-radius: 4px;">
+            <p style="color: #b45309; margin: 0; font-size: 0.875rem;"><strong>Security Warning:</strong> For security reasons, do NOT share this verification code with anyone, including ConnectHub staff.</p>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="color: #94a3b8; font-size: 0.75rem; text-align: center;">If you did not request this password reset, please ignore this email and your password will remain unchanged.</p>
+        </div>
+      `
+    });
+
+    res.status(200).json(genericResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Verify OTP for password reset
+// @route   POST /api/auth/verify-reset-code
+// @access  Public
+const verifyResetCode = async (req, res) => {
+  const { email, code } = req.body;
+
+  if (!email || !code) {
+    return res.status(400).json({ success: false, error: 'Please enter email and verification code' });
+  }
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      return res.status(400).json({ success: false, error: 'Invalid email or code' });
+    }
+
+    // Limit to 5 incorrect OTP attempts
+    if (user.resetPasswordAttempts >= 5) {
+      return res.status(400).json({ success: false, error: 'Maximum OTP attempts exceeded. Please request a new code.' });
+    }
+
+    // Check expiration
+    if (new Date(user.resetPasswordExpires) < new Date()) {
+      return res.status(400).json({ success: false, error: 'Reset code has expired. Please request a new one.' });
+    }
+
+    // Check match
+    if (user.resetPasswordCode !== code) {
+      user.resetPasswordAttempts += 1;
+      await user.save();
+      return res.status(400).json({ success: false, error: 'Incorrect verification code.' });
+    }
+
+    // Mark as verified
+    user.resetPasswordVerified = true;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Code verified successfully.'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Resend password reset OTP
+// @route   POST /api/auth/resend-reset-code
+// @access  Public
+const resendResetCode = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ success: false, error: 'Please enter your email' });
+  }
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    const genericResponse = {
+      success: true,
+      message: 'If this email is registered, a new password reset code has been sent.'
+    };
+
+    if (!user) {
+      return res.status(200).json(genericResponse);
+    }
+
+    // Generate new random 6-digit OTP
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+
+    // Save and overwrite the old OTP
+    user.resetPasswordCode = resetCode;
+    user.resetPasswordExpires = resetExpires;
+    user.resetPasswordAttempts = 0;
+    user.resetPasswordVerified = false;
+    await user.save();
+
+    // Send email helper
+    const sendEmail = require('../utils/sendEmail');
+    await sendEmail({
+      to: user.email,
+      subject: 'ConnectHub Password Reset Code',
+      text: `Hello ${user.fullName},\n\nYou requested a password reset. Your 6-digit verification code is: ${resetCode}.\n\nThis code is valid for 10 minutes. For security reasons, please DO NOT share this code with anyone.\n\nIf you did not request this, please ignore this email.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #8b5cf6; text-align: center;">Reset Your ConnectHub Password</h2>
+          <p>Hello <strong>${user.fullName}</strong>,</p>
+          <p>You requested a password reset. Please use the following 6-digit verification code to verify your request and reset your password:</p>
+          <div style="font-size: 28px; font-weight: bold; letter-spacing: 6px; text-align: center; margin: 30px 0; padding: 15px; background-color: #f1f5f9; border-radius: 6px; color: #0f172a;">
+            ${resetCode}
+          </div>
+          <p style="color: #ef4444; font-weight: 600; text-align: center;">This code will expire in 10 minutes.</p>
+          <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px; margin: 20px 0; border-radius: 4px;">
+            <p style="color: #b45309; margin: 0; font-size: 0.875rem;"><strong>Security Warning:</strong> For security reasons, do NOT share this verification code with anyone, including ConnectHub staff.</p>
+          </div>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="color: #94a3b8; font-size: 0.75rem; text-align: center;">If you did not request this password reset, please ignore this email and your password will remain unchanged.</p>
+        </div>
+      `
+    });
+
+    res.status(200).json(genericResponse);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Reset password
+// @route   POST /api/auth/reset-password
+// @access  Public
+const resetPassword = async (req, res) => {
+  const { email, password, confirmPassword } = req.body;
+
+  if (!email || !password || !confirmPassword) {
+    return res.status(400).json({ success: false, error: 'All fields are required' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+  }
+
+  if (password !== confirmPassword) {
+    return res.status(400).json({ success: false, error: 'Passwords do not match' });
+  }
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      return res.status(400).json({ success: false, error: 'User not found' });
+    }
+
+    // Verify OTP was successfully checked and has not expired
+    if (!user.resetPasswordVerified) {
+      return res.status(401).json({ success: false, error: 'Unauthorized. Please verify your OTP code first.' });
+    }
+
+    if (new Date(user.resetPasswordExpires) < new Date()) {
+      return res.status(400).json({ success: false, error: 'Reset session expired. Please request a new code.' });
+    }
+
+    // Hash password
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    user.passwordHash = passwordHash;
+    // Clear reset credentials
+    user.resetPasswordCode = null;
+    user.resetPasswordExpires = null;
+    user.resetPasswordAttempts = 0;
+    user.resetPasswordVerified = false;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successful.'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   verifyEmail,
-  resendVerificationCode
+  resendVerificationCode,
+  forgotPassword,
+  verifyResetCode,
+  resendResetCode,
+  resetPassword
 };

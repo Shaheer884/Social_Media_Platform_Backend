@@ -1,6 +1,6 @@
 const express = require('express');
 const { check } = require('express-validator');
-const { registerUser, loginUser, verifyEmail, resendVerificationCode } = require('../controllers/authController');
+const { registerUser, loginUser, verifyEmail, resendVerificationCode, forgotPassword, verifyResetCode, resendResetCode, resetPassword } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -47,5 +47,11 @@ router.post(
 // Verification routes (Protected but accessible to unverified users)
 router.post('/verify', protect, verifyEmail);
 router.post('/resend-verification', protect, resendVerificationCode);
+
+// Forgot Password routes (Public)
+router.post('/forgot-password', forgotPassword);
+router.post('/verify-reset-code', verifyResetCode);
+router.post('/resend-reset-code', resendResetCode);
+router.post('/reset-password', resetPassword);
 
 module.exports = router;
