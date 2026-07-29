@@ -39,6 +39,11 @@ const getUserProfile = async (req, res) => {
       }
     }
 
+    // Filter profile and cover image if account is private and viewer is not the owner and not friends
+    const showPrivateMedia = !user.isPrivate || (user._id.toString() === req.user.id) || relationshipStatus === 'friends';
+    const profilePicture = showPrivateMedia ? user.profilePicture : '/uploads/default-avatar.png';
+    const coverPhoto = showPrivateMedia ? user.coverPhoto : '/uploads/default-cover.png';
+
     // Send data
     res.json({
       success: true,
@@ -49,8 +54,8 @@ const getUserProfile = async (req, res) => {
         fullName: user.fullName,
         bio: user.bio,
         location: user.location,
-        profilePicture: user.profilePicture,
-        coverPhoto: user.coverPhoto,
+        profilePicture,
+        coverPhoto,
         followersCount: user.followers.length,
         followingCount: user.following.length,
         followers: user.followers,
