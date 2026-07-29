@@ -26,14 +26,24 @@ const getPostFeed = async (req, res) => {
     // Feed includes followed users' posts + own posts
     const feedUserIds = [...user.following, user._id];
 
+    // Find all users in feedUserIds who are private (isPrivate: true) and NOT the current user
+    const privateUsers = await User.find({
+      _id: { $in: feedUserIds, $ne: req.user.id },
+      isPrivate: true
+    }).select('_id');
+    const privateUserIds = privateUsers.map(u => u._id.toString());
+
+    // Filter feedUserIds to exclude those private users
+    const filteredFeedUserIds = feedUserIds.filter(id => !privateUserIds.includes(id.toString()));
+
     // Find posts, populate author details, order by createdAt desc
-    const posts = await Post.find({ author: { $in: feedUserIds } })
+    const posts = await Post.find({ author: { $in: filteredFeedUserIds } })
       .populate('author', 'username fullName profilePicture')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    const totalPosts = await Post.countDocuments({ author: { $in: feedUserIds } });
+    const totalPosts = await Post.countDocuments({ author: { $in: filteredFeedUserIds } });
     const totalPages = Math.ceil(totalPosts / limit);
 
     // Get comment count for each post
@@ -512,6 +522,16 @@ const unlikePost = async (req, res) => {
 // @access  Protected
 const getUserPosts = async (req, res) => {
   try {
+    const targetUser = await User.findById(req.params.userId);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Exclude posts if target user is private and is not the current user
+    if (targetUser.isPrivate && req.params.userId !== req.user.id) {
+      return res.json({ success: true, data: [] });
+    }
+
     const currentUser = await User.findById(req.user.id);
     const savedPostIds = currentUser ? (currentUser.savedPosts || []).map(id => id.toString()) : [];
 

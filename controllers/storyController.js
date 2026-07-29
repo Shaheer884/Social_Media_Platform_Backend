@@ -18,9 +18,19 @@ const getStories = async (req, res) => {
     const feedUserIds = [...user.following, user._id];
     const activeTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+    // Find all users in feedUserIds who are private (isPrivate: true) and NOT the current user
+    const privateUsers = await User.find({
+      _id: { $in: feedUserIds, $ne: req.user.id },
+      isPrivate: true
+    }).select('_id');
+    const privateUserIds = privateUsers.map(u => u._id.toString());
+
+    // Filter feedUserIds to exclude private users
+    const filteredFeedUserIds = feedUserIds.filter(id => !privateUserIds.includes(id.toString()));
+
     // Get stories created in the last 24 hours
     const stories = await Story.find({
-      user: { $in: feedUserIds },
+      user: { $in: filteredFeedUserIds },
       createdAt: { $gte: activeTime }
     })
       .populate('user', 'username fullName profilePicture')

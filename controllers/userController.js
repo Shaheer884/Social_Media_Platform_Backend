@@ -58,7 +58,8 @@ const getUserProfile = async (req, res) => {
         postCount,
         createdAt: user.createdAt,
         relationshipStatus,
-        birthday: user.birthday
+        birthday: user.birthday,
+        isPrivate: user.isPrivate
       }
     });
   } catch (error) {
@@ -83,7 +84,7 @@ const updateUserProfile = async (req, res) => {
       return res.status(401).json({ success: false, error: 'User not authorized to edit this profile' });
     }
 
-    const { username, fullName, bio, location, birthday, profilePictureUrl, coverPhotoUrl } = req.body;
+    const { username, fullName, bio, location, birthday, profilePictureUrl, coverPhotoUrl, isPrivate } = req.body;
 
     if (username && username.trim().toLowerCase() !== user.username.toLowerCase()) {
       const targetUsername = username.trim().toLowerCase();
@@ -182,6 +183,10 @@ const updateUserProfile = async (req, res) => {
       user.coverPhotoPublicId = '';
     }
 
+    if (isPrivate !== undefined) {
+      user.isPrivate = isPrivate === 'true' || isPrivate === true;
+    }
+
     const updatedUser = await user.save();
 
     res.json({
@@ -198,7 +203,8 @@ const updateUserProfile = async (req, res) => {
         followersCount: updatedUser.followers.length,
         followingCount: updatedUser.following.length,
         createdAt: updatedUser.createdAt,
-        birthday: updatedUser.birthday
+        birthday: updatedUser.birthday,
+        isPrivate: updatedUser.isPrivate
       }
     });
   } catch (error) {
