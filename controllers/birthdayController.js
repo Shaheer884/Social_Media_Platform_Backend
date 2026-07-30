@@ -388,11 +388,10 @@ const deleteWish = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Birthday wish not found' });
     }
 
-    // Sender of the wish, or wall recipient owner of the wish can delete
+    // Only the sender of the wish can delete it
     const isSender = wish.sender.toString() === req.user.id;
-    const isRecipient = wish.recipient.toString() === req.user.id;
 
-    if (!isSender && !isRecipient) {
+    if (!isSender) {
       return res.status(401).json({ success: false, error: 'User not authorized to delete this wish' });
     }
 
