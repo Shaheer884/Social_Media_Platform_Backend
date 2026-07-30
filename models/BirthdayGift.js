@@ -20,6 +20,11 @@ const BirthdayGiftSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  birthdayYear: {
+    type: Number,
+    required: true,
+    default: () => new Date().getFullYear()
+  },
   createdAt: {
     type: Date,
     default: Date.now

@@ -7,7 +7,9 @@ const {
   getReminders,
   postWish,
   postGift,
-  getWishesAndGifts,
+  getWall,
+  editWish,
+  getMemories,
   likeWish,
   replyWish,
   deleteWish
@@ -19,8 +21,10 @@ router.get('/today', getTodayBirthdays);
 router.get('/upcoming', getUpcomingBirthdays);
 router.get('/reminders', getReminders);
 router.post('/wish', postWish);
+router.put('/wish/:wishId', editWish);
 router.post('/send-gift', postGift);
-router.get('/wishes/:userId', getWishesAndGifts);
+router.get('/wall/:userId', getWall);
+router.get('/memories/:userId', getMemories);
 router.post('/wishes/:wishId/like', likeWish);
 router.post('/wishes/:wishId/reply', replyWish);
 router.delete('/wishes/:wishId', deleteWish);

@@ -212,7 +212,8 @@ const postWish = async (req, res) => {
     const wish = await BirthdayWish.create({
       sender: req.user.id,
       recipient: recipientId,
-      message
+      message,
+      birthdayYear: new Date().getFullYear()
     });
 
     // Create Notification (if not wishing self)
@@ -260,7 +261,8 @@ const postGift = async (req, res) => {
       sender: req.user.id,
       recipient: recipientId,
       giftType,
-      message: message || ''
+      message: message || '',
+      birthdayYear: new Date().getFullYear()
     });
 
     // Create Notification (if not gifting self)
@@ -282,10 +284,10 @@ const postGift = async (req, res) => {
   }
 };
 
-// @desc    Get all wishes & gifts for a profile wall
-// @route   GET /api/birthday/wishes/:userId
+// @desc    Get birthday wall for a user (only active on user's actual birthday)
+// @route   GET /api/birthday/wall/:userId
 // @access  Protected
-const getWishesAndGifts = async (req, res) => {
+const getWall = async (req, res) => {
   try {
     const targetUser = await User.findById(req.params.userId);
     if (!targetUser) {
@@ -298,17 +300,30 @@ const getWishesAndGifts = async (req, res) => {
       return res.status(403).json({ success: false, error: 'You are not authorized to view this user\'s birthday wall' });
     }
 
-    const wishes = await BirthdayWish.find({ recipient: req.params.userId })
-      .populate('sender', 'username fullName profilePicture')
-      .populate('replies.sender', 'username fullName profilePicture')
-      .sort({ createdAt: -1 });
+    const today = new Date();
+    const bday = targetUser.birthday ? new Date(targetUser.birthday) : null;
+    const isBirthdayToday = bday && 
+      bday.getMonth() === today.getMonth() && 
+      bday.getDate() === today.getDate();
 
-    const gifts = await BirthdayGift.find({ recipient: req.params.userId })
-      .populate('sender', 'username fullName profilePicture')
-      .sort({ createdAt: -1 });
+    let wishes = [];
+    let gifts = [];
+
+    if (isBirthdayToday) {
+      const currentYear = today.getFullYear();
+      wishes = await BirthdayWish.find({ recipient: req.params.userId, birthdayYear: currentYear })
+        .populate('sender', 'username fullName profilePicture')
+        .populate('replies.sender', 'username fullName profilePicture')
+        .sort({ createdAt: -1 });
+
+      gifts = await BirthdayGift.find({ recipient: req.params.userId, birthdayYear: currentYear })
+        .populate('sender', 'username fullName profilePicture')
+        .sort({ createdAt: -1 });
+    }
 
     res.json({
       success: true,
+      isBirthdayToday: !!isBirthdayToday,
       data: {
         wishes,
         gifts
@@ -403,13 +418,103 @@ const deleteWish = async (req, res) => {
   }
 };
 
+// @desc    Edit a birthday wish
+// @route   PUT /api/birthday/wish/:wishId
+// @access  Protected
+const editWish = async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, error: 'Message content is required' });
+    }
+
+    const wish = await BirthdayWish.findById(req.params.wishId);
+    if (!wish) {
+      return res.status(404).json({ success: false, error: 'Birthday wish not found' });
+    }
+
+    // Only the author of the wish can edit it
+    if (wish.sender.toString() !== req.user.id) {
+      return res.status(401).json({ success: false, error: 'User not authorized to edit this wish' });
+    }
+
+    wish.message = message;
+    await wish.save();
+
+    const populatedWish = await BirthdayWish.findById(wish._id)
+      .populate('sender', 'username fullName profilePicture')
+      .populate('replies.sender', 'username fullName profilePicture');
+
+    res.json({ success: true, data: populatedWish });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Get birthday memories (previous years' wishes/gifts)
+// @route   GET /api/birthday/memories/:userId
+// @access  Protected (restricted to profile owner only)
+const getMemories = async (req, res) => {
+  try {
+    // Only the profile owner can view their own memories
+    if (req.user.id !== req.params.userId) {
+      return res.status(403).json({ success: false, error: 'You are not authorized to view this user\'s birthday memories' });
+    }
+
+    const wishes = await BirthdayWish.find({ recipient: req.params.userId })
+      .populate('sender', 'username fullName profilePicture')
+      .populate('replies.sender', 'username fullName profilePicture')
+      .sort({ createdAt: -1 });
+
+    const gifts = await BirthdayGift.find({ recipient: req.params.userId })
+      .populate('sender', 'username fullName profilePicture')
+      .sort({ createdAt: -1 });
+
+    const memoriesMap = {};
+
+    wishes.forEach(wish => {
+      const year = wish.birthdayYear || new Date(wish.createdAt).getFullYear();
+      if (!memoriesMap[year]) {
+        memoriesMap[year] = { year, wishes: [], gifts: [] };
+      }
+      memoriesMap[year].wishes.push(wish);
+    });
+
+    gifts.forEach(gift => {
+      const year = gift.birthdayYear || new Date(gift.createdAt).getFullYear();
+      if (!memoriesMap[year]) {
+        memoriesMap[year] = { year, wishes: [], gifts: [] };
+      }
+      memoriesMap[year].gifts.push(gift);
+    });
+
+    const memories = Object.values(memoriesMap)
+      .map(m => ({
+        year: m.year,
+        wishesCount: m.wishes.length,
+        giftsCount: m.gifts.length,
+        wishes: m.wishes,
+        gifts: m.gifts
+      }))
+      .sort((a, b) => b.year - a.year);
+
+    res.json({ success: true, data: memories });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   getTodayBirthdays,
   getUpcomingBirthdays,
   getReminders,
   postWish,
   postGift,
-  getWishesAndGifts,
+  getWall,
+  editWish,
+  getMemories,
   likeWish,
   replyWish,
   deleteWish

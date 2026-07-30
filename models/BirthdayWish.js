@@ -38,6 +38,11 @@ const BirthdayWishSchema = new mongoose.Schema({
       }
     }
   ],
+  birthdayYear: {
+    type: Number,
+    required: true,
+    default: () => new Date().getFullYear()
+  },
   createdAt: {
     type: Date,
     default: Date.now
