@@ -48,6 +48,8 @@ const postRoutes = require('./routes/postRoutes');
 const commentRoutes = require('./routes/commentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const storyRoutes = require('./routes/storyRoutes');
+const birthdayRoutes = require('./routes/birthdayRoutes');
+const { startBirthdayChecker } = require('./utils/birthdayChecker');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
@@ -56,6 +58,10 @@ app.use('/api/posts', postRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/stories', storyRoutes);
+app.use('/api/birthday', birthdayRoutes);
+
+// Start background birthday scheduler
+startBirthdayChecker();
 
 // Serve static frontend files if folder exists
 const clientPath = path.join(__dirname, '../client');

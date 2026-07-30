@@ -64,6 +64,7 @@ const getUserProfile = async (req, res) => {
         createdAt: user.createdAt,
         relationshipStatus,
         birthday: user.birthday,
+        birthdayPrivacy: user.birthdayPrivacy || 'Public',
         isPrivate: user.isPrivate
       }
     });
@@ -89,7 +90,7 @@ const updateUserProfile = async (req, res) => {
       return res.status(401).json({ success: false, error: 'User not authorized to edit this profile' });
     }
 
-    const { username, fullName, bio, location, birthday, profilePictureUrl, coverPhotoUrl, isPrivate } = req.body;
+    const { username, fullName, bio, location, birthday, birthdayPrivacy, profilePictureUrl, coverPhotoUrl, isPrivate } = req.body;
 
     if (username && username.trim().toLowerCase() !== user.username.toLowerCase()) {
       const targetUsername = username.trim().toLowerCase();
@@ -108,6 +109,9 @@ const updateUserProfile = async (req, res) => {
     user.location = location !== undefined ? location : user.location;
     if (birthday !== undefined) {
       user.birthday = birthday ? new Date(birthday) : null;
+    }
+    if (birthdayPrivacy !== undefined) {
+      user.birthdayPrivacy = birthdayPrivacy;
     }
 
     // Helper to delete old Cloudinary image
@@ -209,6 +213,7 @@ const updateUserProfile = async (req, res) => {
         followingCount: updatedUser.following.length,
         createdAt: updatedUser.createdAt,
         birthday: updatedUser.birthday,
+        birthdayPrivacy: updatedUser.birthdayPrivacy || 'Public',
         isPrivate: updatedUser.isPrivate
       }
     });

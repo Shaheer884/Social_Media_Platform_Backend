@@ -34,6 +34,11 @@ const UserSchema = new mongoose.Schema({
   birthday: {
     type: Date
   },
+  birthdayPrivacy: {
+    type: String,
+    enum: ['Public', 'Friends Only', 'Only Me'],
+    default: 'Public'
+  },
   bio: {
     type: String,
     default: ''
