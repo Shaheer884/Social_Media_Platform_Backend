@@ -16,6 +16,18 @@ const CommentSchema = new mongoose.Schema({
     required: [true, 'Please add a comment'],
     maxlength: [200, 'Comment cannot be more than 200 characters']
   },
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  isHidden: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now

@@ -91,27 +91,44 @@ const createStory = async (req, res) => {
 
     // Handle file upload if present
     if (req.file) {
+      const { getSettings } = require('../admin/utils/settingsHelper');
+      const settings = await getSettings();
+
       const isVideo = req.file.mimetype.startsWith('video/');
       const isImage = req.file.mimetype.startsWith('image/');
+
+      if (isImage && !settings.allowedImageTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported image type: ${req.file.mimetype}. Supported image types: ${settings.allowedImageTypes.join(', ')}`
+        });
+      }
+
+      if (isVideo && !settings.allowedVideoTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported video type: ${req.file.mimetype}. Supported video types: ${settings.allowedVideoTypes.join(', ')}`
+        });
+      }
 
       if (!isVideo && !isImage) {
         return res.status(400).json({
           success: false,
-          error: `Unsupported file type: ${req.file.originalname}. Only JPEG, JPG, PNG, WEBP and MP4, MOV, WEBM are supported.`
+          error: `Unsupported file type: ${req.file.originalname}. Only images and videos are supported.`
         });
       }
 
-      if (isImage && req.file.size > 5 * 1024 * 1024) {
+      if (isImage && req.file.size > settings.maxImageSize) {
         return res.status(400).json({
           success: false,
-          error: `Image ${req.file.originalname} exceeds the 5MB size limit.`
+          error: `Image ${req.file.originalname} exceeds the size limit of ${settings.maxImageSize / (1024 * 1024)}MB.`
         });
       }
 
-      if (isVideo && req.file.size > 100 * 1024 * 1024) {
+      if (isVideo && req.file.size > settings.maxVideoSize) {
         return res.status(400).json({
           success: false,
-          error: `Video ${req.file.originalname} exceeds the 100MB size limit.`
+          error: `Video ${req.file.originalname} exceeds the size limit of ${settings.maxVideoSize / (1024 * 1024)}MB.`
         });
       }
 

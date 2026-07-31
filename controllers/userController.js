@@ -127,23 +127,26 @@ const updateUserProfile = async (req, res) => {
 
     // Handle files if uploaded via multer
     if (req.files) {
+      const { getSettings } = require('../admin/utils/settingsHelper');
+      const settings = await getSettings();
+
       // 1. Validate files first
       if (req.files.profilePicture) {
         const file = req.files.profilePicture[0];
-        if (!file.mimetype.startsWith('image/')) {
-          return res.status(400).json({ success: false, error: 'Profile picture must be an image file' });
+        if (!settings.allowedImageTypes.includes(file.mimetype)) {
+          return res.status(400).json({ success: false, error: `Profile picture type is not allowed! Only ${settings.allowedImageTypes.join(', ')} are supported.` });
         }
-        if (file.size > 5 * 1024 * 1024) {
-          return res.status(400).json({ success: false, error: 'Profile picture exceeds the 5MB size limit.' });
+        if (file.size > settings.maxImageSize) {
+          return res.status(400).json({ success: false, error: `Profile picture exceeds the size limit of ${settings.maxImageSize / (1024 * 1024)}MB.` });
         }
       }
       if (req.files.coverPhoto) {
         const file = req.files.coverPhoto[0];
-        if (!file.mimetype.startsWith('image/')) {
-          return res.status(400).json({ success: false, error: 'Cover photo must be an image file' });
+        if (!settings.allowedImageTypes.includes(file.mimetype)) {
+          return res.status(400).json({ success: false, error: `Cover photo type is not allowed! Only ${settings.allowedImageTypes.join(', ')} are supported.` });
         }
-        if (file.size > 5 * 1024 * 1024) {
-          return res.status(400).json({ success: false, error: 'Cover photo exceeds the 5MB size limit.' });
+        if (file.size > settings.maxImageSize) {
+          return res.status(400).json({ success: false, error: `Cover photo exceeds the size limit of ${settings.maxImageSize / (1024 * 1024)}MB.` });
         }
       }
 

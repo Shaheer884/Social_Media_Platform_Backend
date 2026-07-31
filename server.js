@@ -12,7 +12,10 @@ const rateLimit = require('express-rate-limit');
 dotenv.config();
 
 // Connect to Database
-connectDB();
+const seedAdmin = require('./admin/utils/seedAdmin');
+connectDB().then(() => {
+  seedAdmin();
+});
 
 const app = express();
 
@@ -52,6 +55,8 @@ const birthdayRoutes = require('./routes/birthdayRoutes');
 const { startBirthdayChecker } = require('./utils/birthdayChecker');
 
 // Mount routes
+const adminRoutes = require('./admin/routes/adminRoutes');
+app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);

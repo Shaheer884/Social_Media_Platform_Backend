@@ -23,6 +23,27 @@ const protect = async (req, res, next) => {
         return res.status(401).json({ success: false, error: 'User not found' });
       }
 
+      // Check if user is soft deleted
+      if (req.user.isDeleted) {
+        return res.status(401).json({ success: false, error: 'Your account has been deleted.' });
+      }
+
+      // Check if user is suspended
+      if (req.user.isSuspended) {
+        return res.status(403).json({ success: false, error: 'Your account has been suspended.' });
+      }
+
+      // Check maintenance mode
+      const PlatformSettings = require('../admin/models/PlatformSettings');
+      const settings = await PlatformSettings.findOne();
+      if (settings && settings.maintenanceMode && req.user.role !== 'admin') {
+        return res.status(503).json({
+          success: false,
+          error: 'Platform is currently undergoing maintenance. Please try again later.',
+          isMaintenance: true
+        });
+      }
+
       // Block unverified users from other protected endpoints, but allow verification requests
       if (
         req.user.isVerified === false &&
@@ -50,4 +71,6 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+const authenticateUser = protect;
+
+module.exports = { protect, authenticateUser };

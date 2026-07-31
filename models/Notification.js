@@ -8,8 +8,12 @@ const NotificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['like', 'comment', 'follow', 'story-like', 'story-comment', 'birthday', 'birthday-wish', 'birthday-gift'],
+    enum: ['like', 'comment', 'follow', 'story-like', 'story-comment', 'birthday', 'birthday-wish', 'birthday-gift', 'announcement'],
     required: true
+  },
+  message: {
+    type: String,
+    default: ''
   },
   sender: {
     type: mongoose.Schema.Types.ObjectId,
