@@ -19,6 +19,9 @@ connectDB().then(() => {
 
 const app = express();
 
+// Enable CORS as the very first middleware to handle preflight requests properly
+app.use(cors());
+
 // Security Middlewares
 app.use(helmet({
   crossOriginResourcePolicy: false,
@@ -36,7 +39,6 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 // Middlewares
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

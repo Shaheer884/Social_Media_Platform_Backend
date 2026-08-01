@@ -648,6 +648,8 @@ const submitReport = async (req, res) => {
     console.error(error);
     res.status(500).json({ success: false, error: error.message });
   }
+};
+
 // @desc    Update Admin Profile
 // @route   PUT /api/admin/profile
 // @access  Private (Admin)
