@@ -3,6 +3,7 @@ const router = express.Router();
 
 const { authenticateAdmin } = require('../middleware/adminAuthMiddleware');
 const { protect } = require('../../middleware/authMiddleware'); // Existing auth middleware
+const upload = require('../../middleware/uploadMiddleware');
 
 const {
   validateSettings,
@@ -37,7 +38,8 @@ const {
   getSettingsPublic,
   updateSettings,
   getTrending,
-  submitReport
+  submitReport,
+  updateAdminProfile
 } = require('../controllers/adminController');
 
 // Public routes
@@ -48,6 +50,7 @@ router.get('/settings/public', getSettingsPublic);
 router.post('/reports', protect, submitReport);
 
 // Admin-only protected routes
+router.put('/profile', authenticateAdmin, upload.fields([{ name: 'profilePicture', maxCount: 1 }]), updateAdminProfile);
 router.get('/stats', authenticateAdmin, getStats);
 router.get('/trending', authenticateAdmin, getTrending);
 router.get('/recycle-bin', authenticateAdmin, getRecycleBin);

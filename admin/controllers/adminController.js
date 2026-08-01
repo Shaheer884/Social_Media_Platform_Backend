@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../../models/User');
+const { cloudinary, uploadStream } = require('../../config/cloudinary');
 
 const dashboardService = require('../services/dashboardService');
 const userManagementService = require('../services/userManagementService');
@@ -647,6 +648,94 @@ const submitReport = async (req, res) => {
     console.error(error);
     res.status(500).json({ success: false, error: error.message });
   }
+// @desc    Update Admin Profile
+// @route   PUT /api/admin/profile
+// @access  Private (Admin)
+const updateAdminProfile = async (req, res) => {
+  try {
+    const admin = await User.findById(req.user.id);
+    if (!admin) {
+      return res.status(404).json({ success: false, error: 'Admin user not found' });
+    }
+
+    const { fullName, username, email, password } = req.body;
+
+    if (username && username.trim().toLowerCase() !== admin.username.toLowerCase()) {
+      const targetUsername = username.trim().toLowerCase();
+      if (targetUsername.length < 3) {
+        return res.status(400).json({ success: false, error: 'Username must be at least 3 characters' });
+      }
+      const existingUser = await User.findOne({ username: targetUsername });
+      if (existingUser) {
+        return res.status(400).json({ success: false, error: 'Username is already taken' });
+      }
+      admin.username = targetUsername;
+    }
+
+    if (email && email.trim().toLowerCase() !== admin.email.toLowerCase()) {
+      const targetEmail = email.trim().toLowerCase();
+      const existingEmail = await User.findOne({ email: targetEmail });
+      if (existingEmail) {
+        return res.status(400).json({ success: false, error: 'Email is already registered' });
+      }
+      admin.email = targetEmail;
+    }
+
+    admin.fullName = fullName || admin.fullName;
+
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+      }
+      const salt = await bcrypt.genSalt(10);
+      admin.passwordHash = await bcrypt.hash(password, salt);
+    }
+
+    // Handle profile picture file upload if provided
+    if (req.files && req.files.profilePicture) {
+      const file = req.files.profilePicture[0];
+      const { getSettings } = require('../utils/settingsHelper');
+      const settings = await getSettings();
+
+      if (!settings.allowedImageTypes.includes(file.mimetype)) {
+        return res.status(400).json({ success: false, error: `Image type not allowed. Supported: ${settings.allowedImageTypes.join(', ')}` });
+      }
+      if (file.size > settings.maxImageSize) {
+        return res.status(400).json({ success: false, error: `Image size exceeds limit of ${settings.maxImageSize / (1024 * 1024)}MB.` });
+      }
+
+      // Delete old profile picture if exists on Cloudinary
+      if (admin.profilePicturePublicId) {
+        try {
+          await cloudinary.uploader.destroy(admin.profilePicturePublicId);
+        } catch (err) {
+          console.error('Failed to delete old admin avatar:', err);
+        }
+      }
+
+      const uploadResult = await uploadStream(file.buffer, 'connecthub/profiles/avatars', 'image');
+      admin.profilePicture = uploadResult.secure_url;
+      admin.profilePicturePublicId = uploadResult.public_id;
+    }
+
+    await admin.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        _id: admin._id,
+        username: admin.username,
+        email: admin.email,
+        fullName: admin.fullName,
+        profilePicture: admin.profilePicture,
+        role: admin.role
+      }
+    });
+  } catch (error) {
+    console.error('Update admin profile error:', error);
+    res.status(500).json({ success: false, error: 'Server error during profile update' });
+  }
 };
 
 module.exports = {
@@ -676,5 +765,6 @@ module.exports = {
   getSettingsPublic,
   updateSettings,
   getTrending,
-  submitReport
+  submitReport,
+  updateAdminProfile
 };
