@@ -200,6 +200,9 @@ const createPost = async (req, res) => {
       'username fullName profilePicture'
     );
 
+    const { handleMentions } = require('../utils/mentionHelper');
+    await handleMentions(content, req.user.id, { post: newPost._id }, 'mentioned you in a post');
+
     res.status(201).json({
       success: true,
       data: {
@@ -411,6 +414,9 @@ const updatePost = async (req, res) => {
       'author',
       'username fullName profilePicture'
     );
+
+    const { handleMentions } = require('../utils/mentionHelper');
+    await handleMentions(content, req.user.id, { post: updatedPost._id }, 'mentioned you in a post');
 
     res.json({ success: true, data: populated });
   } catch (error) {

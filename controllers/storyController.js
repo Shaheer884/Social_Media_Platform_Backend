@@ -171,6 +171,9 @@ const createStory = async (req, res) => {
       .populate('user', 'username fullName profilePicture')
       .populate('comments.user', 'username fullName profilePicture');
 
+    const { handleMentions } = require('../utils/mentionHelper');
+    await handleMentions(text, req.user.id, { story: story._id }, 'mentioned you in a story');
+
     res.status(201).json({ success: true, data: populatedStory });
   } catch (error) {
     console.error('Error creating story:', error);
@@ -199,6 +202,9 @@ const updateStory = async (req, res) => {
 
     await story.save();
     const populated = await Story.findById(story._id).populate('user', 'username fullName profilePicture');
+
+    const { handleMentions } = require('../utils/mentionHelper');
+    await handleMentions(text, req.user.id, { story: story._id }, 'mentioned you in a story');
 
     res.json({ success: true, data: populated });
   } catch (error) {

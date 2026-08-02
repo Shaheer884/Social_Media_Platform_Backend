@@ -45,6 +45,9 @@ const createComment = async (req, res) => {
       'username fullName profilePicture'
     );
 
+    const { handleMentions } = require('../utils/mentionHelper');
+    await handleMentions(content, req.user.id, { post: post._id }, 'mentioned you in a comment');
+
     // Create Notification (only if user comments on someone else's post)
     if (post.author.toString() !== req.user.id) {
       await Notification.create({
