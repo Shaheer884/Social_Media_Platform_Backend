@@ -402,8 +402,11 @@ const getFollowSuggestions = async (req, res) => {
     // Find users who are not the current user and not in current user's following list
     const excludedIds = [currentUser._id, ...currentUser.following];
 
-    // Get up to 5 random suggested users
-    const suggestions = await User.find({ _id: { $nin: excludedIds } })
+    // Get up to 5 random suggested users (excluding admin role)
+    const suggestions = await User.find({ 
+      _id: { $nin: excludedIds },
+      role: { $ne: 'admin' }
+    })
       .select('username fullName profilePicture bio followers following')
       .limit(5);
 

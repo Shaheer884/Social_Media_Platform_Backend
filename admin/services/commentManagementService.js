@@ -15,7 +15,14 @@ const getComments = async (page = 1, limit = 10, search = '', filterHidden = '')
 
   const comments = await Comment.find(query)
     .populate('author', 'username fullName profilePicture email')
-    .populate('post', 'content')
+    .populate({
+      path: 'post',
+      select: 'content author media imageUrl mediaType',
+      populate: {
+        path: 'author',
+        select: 'username fullName profilePicture'
+      }
+    })
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit);
