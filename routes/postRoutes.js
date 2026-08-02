@@ -11,7 +11,8 @@ const {
   getUserPosts,
   savePost,
   unsavePost,
-  getSavedPosts
+  getSavedPosts,
+  getPostsByLocation
 } = require('../controllers/postController');
 const upload = require('../middleware/uploadMiddleware');
 
@@ -22,6 +23,7 @@ router.get('/', protect, getPostFeed);
 router.post('/', protect, upload.any(), createPost);
 router.get('/saved', protect, getSavedPosts);
 router.get('/user/:userId', protect, getUserPosts);
+router.get('/location/:placeId', protect, getPostsByLocation);
 router.get('/:id', protect, getPostById);
 router.put('/:id', protect, upload.any(), updatePost);
 router.delete('/:id', protect, deletePost);

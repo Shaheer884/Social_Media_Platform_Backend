@@ -447,8 +447,10 @@ const searchUsers = async (req, res) => {
   try {
     const query = req.query.q || '';
     if (!query) {
-      return res.json({ success: true, data: [] });
+      return res.json({ success: true, data: { users: [], posts: [], locations: [] } });
     }
+
+    // 1. Search Users
     const users = await User.find({
       $or: [
         { username: { $regex: query, $options: 'i' } },
@@ -479,9 +481,73 @@ const searchUsers = async (req, res) => {
       };
     });
 
-    res.json({ success: true, data: usersWithStatus });
+    // 2. Search Posts (including hashtags)
+    const currentUser = await User.findById(req.user.id);
+    const savedPostIds = currentUser ? (currentUser.savedPosts || []).map(id => id.toString()) : [];
+
+    const posts = await Post.find({
+      content: { $regex: query, $options: 'i' },
+      isDeleted: false,
+      isHidden: false
+    })
+      .populate('author', 'username fullName profilePicture')
+      .sort({ createdAt: -1 })
+      .limit(15);
+
+    const postsWithDetails = await Promise.all(
+      posts.map(async (post) => {
+        // Exclude private posts if user is not author or friend
+        const author = await User.findById(post.author._id);
+        if (author && author.isPrivate && author._id.toString() !== req.user.id) {
+          const isFollowing = author.followers.some(id => id.toString() === req.user.id);
+          const isFollowedBy = author.following.some(id => id.toString() === req.user.id);
+          if (!(isFollowing && isFollowedBy)) {
+            return null;
+          }
+        }
+
+        const commentCount = await Comment.countDocuments({ post: post._id });
+        return {
+          ...post._doc,
+          commentCount,
+          likesCount: post.likes.length,
+          isLiked: post.likes.includes(req.user.id),
+          isSaved: savedPostIds.includes(post._id.toString())
+        };
+      })
+    );
+    const visiblePosts = postsWithDetails.filter(p => p !== null);
+
+    // 3. Search Locations
+    const postsWithLocation = await Post.find({
+      isDeleted: false,
+      isHidden: false,
+      $or: [
+        { 'location.name': { $regex: query, $options: 'i' } },
+        { 'location.city': { $regex: query, $options: 'i' } },
+        { 'location.country': { $regex: query, $options: 'i' } }
+      ]
+    }).select('location').limit(50);
+
+    const uniqueLocations = [];
+    const seenPlaceIds = new Set();
+    for (const p of postsWithLocation) {
+      if (p.location && p.location.placeId && !seenPlaceIds.has(p.location.placeId)) {
+        seenPlaceIds.add(p.location.placeId);
+        uniqueLocations.push(p.location);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        users: usersWithStatus,
+        posts: visiblePosts,
+        locations: uniqueLocations
+      }
+    });
   } catch (error) {
-    console.error(error);
+    console.error('Unified search error:', error);
     res.status(500).json({ success: false, error: 'Server error' });
   }
 };

@@ -47,6 +47,16 @@ const PostSchema = new mongoose.Schema(
         ref: 'User'
       }
     ],
+    location: {
+      name: { type: String },
+      address: { type: String },
+      city: { type: String },
+      state: { type: String },
+      country: { type: String },
+      latitude: { type: Number },
+      longitude: { type: Number },
+      placeId: { type: String }
+    },
     isDeleted: {
       type: Boolean,
       default: false

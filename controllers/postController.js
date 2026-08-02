@@ -185,6 +185,15 @@ const createPost = async (req, res) => {
       cloudinaryPublicId = media[0].publicId;
     }
 
+    let locationData = undefined;
+    if (req.body.location) {
+      try {
+        locationData = typeof req.body.location === 'string' ? JSON.parse(req.body.location) : req.body.location;
+      } catch (err) {
+        console.error('Failed to parse location in createPost:', err);
+      }
+    }
+
     const newPost = await Post.create({
       author: req.user.id,
       content,
@@ -192,7 +201,8 @@ const createPost = async (req, res) => {
       mediaUrl,
       mediaType,
       cloudinaryPublicId,
-      media
+      media,
+      location: locationData
     });
 
     const populatedPost = await Post.findById(newPost._id).populate(
@@ -407,6 +417,18 @@ const updatePost = async (req, res) => {
       post.mediaUrl = '';
       post.mediaType = 'none';
       post.cloudinaryPublicId = '';
+    }
+
+    if (req.body.location !== undefined) {
+      if (req.body.location === null || req.body.location === '') {
+        post.location = undefined;
+      } else {
+        try {
+          post.location = typeof req.body.location === 'string' ? JSON.parse(req.body.location) : req.body.location;
+        } catch (err) {
+          console.error('Failed to parse location in updatePost:', err);
+        }
+      }
     }
 
     const updatedPost = await post.save();
@@ -686,6 +708,56 @@ const getSavedPosts = async (req, res) => {
   }
 };
 
+// @desc    Get posts by location placeId
+// @route   GET /api/posts/location/:placeId
+// @access  Protected
+const getPostsByLocation = async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.id);
+    const savedPostIds = currentUser ? (currentUser.savedPosts || []).map(id => id.toString()) : [];
+
+    const posts = await Post.find({ 
+      'location.placeId': req.params.placeId,
+      isDeleted: false,
+      isHidden: false
+    })
+      .populate('author', 'username fullName profilePicture')
+      .sort({ createdAt: -1 });
+
+    const postsWithDetails = await Promise.all(
+      posts.map(async (post) => {
+        // Exclude private posts if user is not author or friend
+        const author = await User.findById(post.author._id);
+        if (author && author.isPrivate && author._id.toString() !== req.user.id) {
+          // Check friendship status
+          const isFollowing = author.followers.some(id => id.toString() === req.user.id);
+          const isFollowedBy = author.following.some(id => id.toString() === req.user.id);
+          if (!(isFollowing && isFollowedBy)) {
+            return null; // Skip private non-friend posts
+          }
+        }
+
+        const commentCount = await Comment.countDocuments({ post: post._id });
+        return {
+          ...post._doc,
+          commentCount,
+          likesCount: post.likes.length,
+          isLiked: post.likes.includes(req.user.id),
+          isSaved: savedPostIds.includes(post._id.toString())
+        };
+      })
+    );
+
+    // Filter out nulls from private non-friend posts
+    const visiblePosts = postsWithDetails.filter(p => p !== null);
+
+    res.json({ success: true, data: visiblePosts });
+  } catch (error) {
+    console.error('Error in getPostsByLocation:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   getPostFeed,
   createPost,
@@ -697,5 +769,6 @@ module.exports = {
   getUserPosts,
   savePost,
   unsavePost,
-  getSavedPosts
+  getSavedPosts,
+  getPostsByLocation
 };
