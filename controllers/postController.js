@@ -81,7 +81,7 @@ const getPostFeed = async (req, res) => {
 // @access  Protected
 const createPost = async (req, res) => {
   try {
-    const { content, imageUrlUrl } = req.body;
+    const { content, imageUrlUrl, feeling, activity } = req.body;
 
     const files = req.files || [];
 
@@ -202,7 +202,9 @@ const createPost = async (req, res) => {
       mediaType,
       cloudinaryPublicId,
       media,
-      location: locationData
+      location: locationData,
+      feeling,
+      activity
     });
 
     const populatedPost = await Post.findById(newPost._id).populate(

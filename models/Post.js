@@ -57,6 +57,14 @@ const PostSchema = new mongoose.Schema(
       longitude: { type: Number },
       placeId: { type: String }
     },
+    feeling: {
+      type: String,
+      default: ''
+    },
+    activity: {
+      type: String,
+      default: ''
+    },
     isDeleted: {
       type: Boolean,
       default: false
