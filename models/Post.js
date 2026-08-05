@@ -76,6 +76,10 @@ const PostSchema = new mongoose.Schema(
     isHidden: {
       type: Boolean,
       default: false
+    },
+    bgColor: {
+      type: String,
+      default: ''
     }
   },
   {

@@ -81,7 +81,7 @@ const getPostFeed = async (req, res) => {
 // @access  Protected
 const createPost = async (req, res) => {
   try {
-    const { content, imageUrlUrl, feeling, activity } = req.body;
+    const { content, imageUrlUrl, feeling, activity, bgColor } = req.body;
 
     const files = req.files || [];
 
@@ -204,7 +204,8 @@ const createPost = async (req, res) => {
       media,
       location: locationData,
       feeling,
-      activity
+      activity,
+      bgColor
     });
 
     const populatedPost = await Post.findById(newPost._id).populate(
@@ -306,6 +307,9 @@ const updatePost = async (req, res) => {
 
     const { content, imageUrlUrl } = req.body;
     post.content = content !== undefined ? content : post.content;
+    if (req.body.bgColor !== undefined) {
+      post.bgColor = req.body.bgColor;
+    }
 
     // 1. Determine remaining media
     let remainingMedia = [];
