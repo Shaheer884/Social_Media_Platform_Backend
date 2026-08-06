@@ -496,14 +496,28 @@ const searchUsers = async (req, res) => {
 
     const postsWithDetails = await Promise.all(
       posts.map(async (post) => {
-        // Exclude private posts if user is not author or friend
+        // Exclude restricted audience or private posts if user is not authorized
         const author = await User.findById(post.author._id);
-        if (author && author.isPrivate && author._id.toString() !== req.user.id) {
-          const isFollowing = author.followers.some(id => id.toString() === req.user.id);
-          const isFollowedBy = author.following.some(id => id.toString() === req.user.id);
-          if (!(isFollowing && isFollowedBy)) {
-            return null;
-          }
+        if (!author) return null;
+
+        const isAuthor = author._id.toString() === req.user.id;
+
+        // 1. Audience Filter
+        if (post.audience === 'Only me' && !isAuthor) {
+          return null;
+        }
+
+        const isFollowing = author.followers.some(id => id.toString() === req.user.id);
+        const isFollowedBy = author.following.some(id => id.toString() === req.user.id);
+        const isFriend = isFollowing && isFollowedBy;
+
+        if (post.audience === 'Friends' && !isAuthor && !isFriend) {
+          return null;
+        }
+
+        // 2. Private User Filter
+        if (author.isPrivate && !isAuthor && !isFriend) {
+          return null;
         }
 
         const commentCount = await Comment.countDocuments({ post: post._id });

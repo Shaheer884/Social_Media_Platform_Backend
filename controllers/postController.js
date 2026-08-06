@@ -36,14 +36,36 @@ const getPostFeed = async (req, res) => {
     // Filter feedUserIds to exclude those private users
     const filteredFeedUserIds = feedUserIds.filter(id => !privateUserIds.includes(id.toString()));
 
+    // Fetch friends list of current user to filter posts with 'Friends' audience
+    const friendUsers = await User.find({
+      _id: { $in: user.following },
+      following: req.user.id
+    }).select('_id');
+    const friendIds = friendUsers.map(u => u._id.toString());
+
+    // Build feed query with audience permissions
+    const feedQuery = {
+      author: { $in: filteredFeedUserIds },
+      $or: [
+        { author: req.user.id },
+        {
+          author: { $ne: req.user.id },
+          $or: [
+            { audience: { $in: ['Public', null, undefined] } },
+            { audience: 'Friends', author: { $in: friendIds } }
+          ]
+        }
+      ]
+    };
+
     // Find posts, populate author details, order by createdAt desc
-    const posts = await Post.find({ author: { $in: filteredFeedUserIds } })
+    const posts = await Post.find(feedQuery)
       .populate('author', 'username fullName profilePicture')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    const totalPosts = await Post.countDocuments({ author: { $in: filteredFeedUserIds } });
+    const totalPosts = await Post.countDocuments(feedQuery);
     const totalPages = Math.ceil(totalPosts / limit);
 
     // Get comment count for each post
@@ -81,7 +103,7 @@ const getPostFeed = async (req, res) => {
 // @access  Protected
 const createPost = async (req, res) => {
   try {
-    const { content, imageUrlUrl, feeling, activity, bgColor } = req.body;
+    const { content, imageUrlUrl, feeling, activity, bgColor, audience } = req.body;
 
     const files = req.files || [];
 
@@ -205,7 +227,8 @@ const createPost = async (req, res) => {
       location: locationData,
       feeling,
       activity,
-      bgColor
+      bgColor,
+      audience
     });
 
     const populatedPost = await Post.findById(newPost._id).populate(
@@ -243,6 +266,22 @@ const getPostById = async (req, res) => {
 
     if (!post) {
       return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+
+    // Check post audience permissions
+    const isAuthor = post.author._id.toString() === req.user.id;
+    if (post.audience === 'Only me' && !isAuthor) {
+      return res.status(403).json({ success: false, error: 'Not authorized to view this post' });
+    }
+
+    if (post.audience === 'Friends' && !isAuthor) {
+      const authorUser = await User.findById(post.author._id);
+      const isFollowing = authorUser.followers.some(id => id.toString() === req.user.id);
+      const isFollowedBy = authorUser.following.some(id => id.toString() === req.user.id);
+      const isFriend = isFollowing && isFollowedBy;
+      if (!isFriend) {
+        return res.status(403).json({ success: false, error: 'Not authorized to view this post. Only friends can view this.' });
+      }
     }
 
     const commentCount = await Comment.countDocuments({ post: post._id });
@@ -603,7 +642,22 @@ const getUserPosts = async (req, res) => {
     const currentUser = await User.findById(req.user.id);
     const savedPostIds = currentUser ? (currentUser.savedPosts || []).map(id => id.toString()) : [];
 
-    const posts = await Post.find({ author: req.params.userId })
+    let postQuery = { author: req.params.userId };
+    if (req.params.userId !== req.user.id) {
+      // Check if they are friends
+      const isFollowing = targetUser.followers.some(id => id.toString() === req.user.id);
+      const isFollowedBy = targetUser.following.some(id => id.toString() === req.user.id);
+      const isFriend = isFollowing && isFollowedBy;
+
+      postQuery.$or = [
+        { audience: { $in: ['Public', null, undefined] } }
+      ];
+      if (isFriend) {
+        postQuery.$or.push({ audience: 'Friends' });
+      }
+    }
+
+    const posts = await Post.find(postQuery)
       .populate('author', 'username fullName profilePicture')
       .sort({ createdAt: -1 });
 
@@ -749,15 +803,27 @@ const getPostsByLocation = async (req, res) => {
 
     const postsWithDetails = await Promise.all(
       posts.map(async (post) => {
-        // Exclude private posts if user is not author or friend
         const author = await User.findById(post.author._id);
-        if (author && author.isPrivate && author._id.toString() !== req.user.id) {
-          // Check friendship status
-          const isFollowing = author.followers.some(id => id.toString() === req.user.id);
-          const isFollowedBy = author.following.some(id => id.toString() === req.user.id);
-          if (!(isFollowing && isFollowedBy)) {
-            return null; // Skip private non-friend posts
-          }
+        if (!author) return null;
+
+        const isAuthor = author._id.toString() === req.user.id;
+
+        // 1. Audience Filter
+        if (post.audience === 'Only me' && !isAuthor) {
+          return null;
+        }
+
+        const isFollowing = author.followers.some(id => id.toString() === req.user.id);
+        const isFollowedBy = author.following.some(id => id.toString() === req.user.id);
+        const isFriend = isFollowing && isFollowedBy;
+
+        if (post.audience === 'Friends' && !isAuthor && !isFriend) {
+          return null;
+        }
+
+        // 2. Private User Filter
+        if (author.isPrivate && !isAuthor && !isFriend) {
+          return null; // Skip private non-friend posts
         }
 
         const commentCount = await Comment.countDocuments({ post: post._id });

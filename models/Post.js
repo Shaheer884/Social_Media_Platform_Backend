@@ -80,6 +80,11 @@ const PostSchema = new mongoose.Schema(
     bgColor: {
       type: String,
       default: ''
+    },
+    audience: {
+      type: String,
+      enum: ['Public', 'Friends', 'Only me'],
+      default: 'Public'
     }
   },
   {
