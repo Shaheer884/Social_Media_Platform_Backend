@@ -8,6 +8,7 @@ const getNotifications = async (req, res) => {
     const notifications = await Notification.find({ recipient: req.user.id })
       .populate('sender', 'username fullName profilePicture followers following')
       .populate('post', 'content')
+      .populate('story', 'text imageUrl backgroundColor')
       .sort({ createdAt: -1 });
 
     const notificationsWithSenderStatus = notifications.map(n => {

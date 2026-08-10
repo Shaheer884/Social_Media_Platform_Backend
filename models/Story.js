@@ -64,6 +64,63 @@ const StorySchema = new mongoose.Schema(
           default: Date.now
         }
       }
+    ],
+    views: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User'
+        },
+        viewedAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ],
+    mentions: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ],
+    privacy: {
+      type: String,
+      enum: ['public', 'friends', 'followers', 'me', 'custom', 'hide'],
+      default: 'public'
+    },
+    allowedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ],
+    hiddenUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ],
+    storyReplies: [
+      {
+        sender: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true
+        },
+        receiver: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true
+        },
+        message: {
+          type: String,
+          required: true
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
     ]
   },
   {

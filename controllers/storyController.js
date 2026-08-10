@@ -5,6 +5,70 @@ const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
 const { cloudinary, uploadStream } = require('../config/cloudinary');
 
+const parseField = (field) => {
+  if (!field) return [];
+  if (Array.isArray(field)) return field;
+  try {
+    return JSON.parse(field);
+  } catch (e) {
+    return typeof field === 'string' ? field.split(',').map(s => s.trim()).filter(Boolean) : [];
+  }
+};
+
+const checkStoryAccess = async (story, viewerId) => {
+  const ownerId = story.user._id || story.user;
+  if (ownerId.toString() === viewerId.toString()) {
+    return true;
+  }
+
+  // Check expiration (24 hours)
+  const activeTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  if (story.createdAt < activeTime) {
+    return false;
+  }
+
+  // Check if explicitly mentioned
+  const mentions = story.mentions || [];
+  if (mentions.some(id => id.toString() === viewerId.toString())) {
+    return true;
+  }
+
+  // Check privacy settings
+  const privacy = story.privacy || 'public';
+  if (privacy === 'me') {
+    return false;
+  }
+  if (privacy === 'custom') {
+    const allowed = story.allowedUsers || [];
+    return allowed.some(id => id.toString() === viewerId.toString());
+  }
+  if (privacy === 'hide') {
+    const hidden = story.hiddenUsers || [];
+    return !hidden.some(id => id.toString() === viewerId.toString());
+  }
+
+  // Retrieve user followers/following if not populated
+  let userDoc = story.user;
+  if (!userDoc.followers || !userDoc.following) {
+    userDoc = await User.findById(story.user).select('followers following');
+    if (!userDoc) return false;
+  }
+
+  const authorFollowers = userDoc.followers || [];
+  const authorFollowing = userDoc.following || [];
+  
+  if (privacy === 'followers') {
+    return authorFollowers.some(id => id.toString() === viewerId.toString());
+  }
+  if (privacy === 'friends') {
+    const isFollower = authorFollowers.some(id => id.toString() === viewerId.toString());
+    const isFollowing = authorFollowing.some(id => id.toString() === viewerId.toString());
+    return isFollower && isFollowing;
+  }
+
+  return true;
+};
+
 // @desc    Get all active stories (own + followed users) from last 24h
 // @route   GET /api/stories
 // @access  Protected
@@ -33,13 +97,22 @@ const getStories = async (req, res) => {
       user: { $in: filteredFeedUserIds },
       createdAt: { $gte: activeTime }
     })
-      .populate('user', 'username fullName profilePicture')
+      .populate('user', 'username fullName profilePicture followers following')
       .populate('comments.user', 'username fullName profilePicture')
       .sort({ createdAt: 1 }); // Chronological order
 
+    // Filter stories based on privacy rules
+    const visibleStories = [];
+    for (const story of stories) {
+      const isVisible = await checkStoryAccess(story, req.user.id);
+      if (isVisible) {
+        visibleStories.push(story);
+      }
+    }
+
     // Group stories by user
     const grouped = {};
-    stories.forEach((story) => {
+    visibleStories.forEach((story) => {
       if (!story.user) return;
       const userId = story.user._id.toString();
       if (!grouped[userId]) {
@@ -83,7 +156,7 @@ const getStories = async (req, res) => {
 // @access  Protected
 const createStory = async (req, res) => {
   try {
-    const { text, backgroundColor } = req.body;
+    const { text, backgroundColor, privacy, allowedUsers, hiddenUsers, mentions } = req.body;
     let imageUrl = '';
     let mediaType = 'image';
     let cloudinaryPublicId = '';
@@ -157,6 +230,19 @@ const createStory = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Story must have either text or an image/video' });
     }
 
+    // Parse text mentions to extract user IDs
+    const mentionRegex = /@([a-zA-Z0-9_]+)/g;
+    const matches = [...(text || '').matchAll(mentionRegex)];
+    const usernames = [...new Set(matches.map(m => m[1]))];
+    const mentionUserIds = [];
+    if (usernames.length > 0) {
+      const users = await User.find({ username: { $in: usernames } }).select('_id');
+      users.forEach(u => mentionUserIds.push(u._id));
+    }
+
+    const explicitMentions = parseField(mentions);
+    const combinedMentions = [...new Set([...explicitMentions, ...mentionUserIds.map(id => id.toString())])];
+
     const story = await Story.create({
       user: req.user.id,
       text: text || '',
@@ -164,12 +250,36 @@ const createStory = async (req, res) => {
       mediaType,
       cloudinaryPublicId,
       media,
-      backgroundColor: backgroundColor || 'linear-gradient(135deg, #8b5cf6, #ec4899)'
+      backgroundColor: backgroundColor || 'linear-gradient(135deg, #8b5cf6, #ec4899)',
+      privacy: privacy || 'public',
+      allowedUsers: parseField(allowedUsers),
+      hiddenUsers: parseField(hiddenUsers),
+      mentions: combinedMentions
     });
 
     const populatedStory = await Story.findById(story._id)
       .populate('user', 'username fullName profilePicture')
       .populate('comments.user', 'username fullName profilePicture');
+
+    // Create notifications for mentioned users
+    for (const mentionedId of combinedMentions) {
+      if (mentionedId.toString() === req.user.id) continue;
+      
+      const existingNoti = await Notification.findOne({
+        recipient: mentionedId,
+        sender: req.user.id,
+        type: 'story-mention',
+        story: story._id
+      });
+      if (!existingNoti) {
+        await Notification.create({
+          recipient: mentionedId,
+          sender: req.user.id,
+          type: 'story-mention',
+          story: story._id
+        });
+      }
+    }
 
     const { handleMentions } = require('../utils/mentionHelper');
     await handleMentions(text, req.user.id, { story: story._id }, 'mentioned you in a story');
@@ -196,9 +306,47 @@ const updateStory = async (req, res) => {
       return res.status(401).json({ success: false, error: 'Not authorized to edit this story' });
     }
 
-    const { text, backgroundColor } = req.body;
+    const { text, backgroundColor, privacy, allowedUsers, hiddenUsers, mentions } = req.body;
     story.text = text !== undefined ? text : story.text;
     story.backgroundColor = backgroundColor !== undefined ? backgroundColor : story.backgroundColor;
+    if (privacy !== undefined) story.privacy = privacy;
+    if (allowedUsers !== undefined) story.allowedUsers = parseField(allowedUsers);
+    if (hiddenUsers !== undefined) story.hiddenUsers = parseField(hiddenUsers);
+
+    // Handle mentions updating
+    if (text !== undefined || mentions !== undefined) {
+      const mentionRegex = /@([a-zA-Z0-9_]+)/g;
+      const matches = [...(story.text || '').matchAll(mentionRegex)];
+      const usernames = [...new Set(matches.map(m => m[1]))];
+      const mentionUserIds = [];
+      if (usernames.length > 0) {
+        const users = await User.find({ username: { $in: usernames } }).select('_id');
+        users.forEach(u => mentionUserIds.push(u._id));
+      }
+      
+      const explicitMentions = mentions !== undefined ? parseField(mentions) : (story.mentions || []);
+      const combinedMentions = [...new Set([...explicitMentions.map(id => id.toString()), ...mentionUserIds.map(id => id.toString())])];
+      story.mentions = combinedMentions;
+
+      // Send notifications
+      for (const mentionedId of combinedMentions) {
+        if (mentionedId.toString() === req.user.id) continue;
+        const existingNoti = await Notification.findOne({
+          recipient: mentionedId,
+          sender: req.user.id,
+          type: 'story-mention',
+          story: story._id
+        });
+        if (!existingNoti) {
+          await Notification.create({
+            recipient: mentionedId,
+            sender: req.user.id,
+            type: 'story-mention',
+            story: story._id
+          });
+        }
+      }
+    }
 
     await story.save();
     const populated = await Story.findById(story._id).populate('user', 'username fullName profilePicture');
@@ -373,6 +521,170 @@ const commentStory = async (req, res) => {
   }
 };
 
+// @desc    Record story view
+// @route   POST /api/stories/:id/view
+// @access  Protected
+const viewStory = async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id);
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    const hasAccess = await checkStoryAccess(story, req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Not authorized to view this story' });
+    }
+
+    if (story.user.toString() !== req.user.id) {
+      const alreadyViewed = story.views && story.views.some(v => v.user.toString() === req.user.id);
+      if (!alreadyViewed) {
+        if (!story.views) story.views = [];
+        story.views.push({
+          user: req.user.id,
+          viewedAt: new Date()
+        });
+        await story.save();
+      }
+    }
+
+    res.json({ success: true, message: 'Story view recorded' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Get story viewers
+// @route   GET /api/stories/:id/views
+// @access  Protected
+const getStoryViews = async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id)
+      .populate('views.user', 'username fullName profilePicture');
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    if (story.user.toString() !== req.user.id) {
+      return res.status(401).json({ success: false, error: 'Not authorized to see views list' });
+    }
+
+    res.json({
+      success: true,
+      count: story.views.length,
+      views: story.views
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Get story likes
+// @route   GET /api/stories/:id/likes
+// @access  Protected
+const getStoryLikes = async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id)
+      .populate('likes', 'username fullName profilePicture');
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    const hasAccess = await checkStoryAccess(story, req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Not authorized to access this story' });
+    }
+
+    res.json({
+      success: true,
+      count: story.likes.length,
+      likes: story.likes
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Reply to story
+// @route   POST /api/stories/:id/reply
+// @access  Protected
+const replyStory = async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ success: false, error: 'Reply message is required' });
+    }
+
+    const story = await Story.findById(req.params.id);
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    const hasAccess = await checkStoryAccess(story, req.user.id);
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Not authorized to reply to this story' });
+    }
+
+    const reply = {
+      sender: req.user.id,
+      receiver: story.user,
+      message: message.trim(),
+      createdAt: new Date()
+    };
+
+    if (!story.storyReplies) story.storyReplies = [];
+    story.storyReplies.push(reply);
+    await story.save();
+
+    // Create Notification
+    if (story.user.toString() !== req.user.id) {
+      await Notification.create({
+        recipient: story.user,
+        type: 'story-reply',
+        sender: req.user.id,
+        story: story._id,
+        message: message.trim()
+      });
+    }
+
+    res.status(201).json({ success: true, reply });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+// @desc    Get story replies
+// @route   GET /api/stories/:id/replies
+// @access  Protected
+const getStoryReplies = async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id)
+      .populate('storyReplies.sender', 'username fullName profilePicture')
+      .populate('storyReplies.receiver', 'username fullName profilePicture');
+    if (!story) {
+      return res.status(404).json({ success: false, error: 'Story not found' });
+    }
+
+    const isOwner = story.user.toString() === req.user.id;
+    let replies = story.storyReplies || [];
+    if (!isOwner) {
+      replies = replies.filter(r => r.sender._id.toString() === req.user.id);
+    }
+
+    res.json({
+      success: true,
+      data: replies
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   getStories,
   createStory,
@@ -380,5 +692,10 @@ module.exports = {
   deleteStory,
   likeStory,
   unlikeStory,
-  commentStory
+  commentStory,
+  viewStory,
+  getStoryViews,
+  getStoryLikes,
+  replyStory,
+  getStoryReplies
 };
