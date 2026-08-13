@@ -13,7 +13,8 @@ const {
   getStoryLikes,
   replyStory,
   getStoryReplies,
-  getStoryUploadSignature
+  getStoryUploadSignature,
+  cleanupStoryMedia
 } = require('../controllers/storyController');
 const upload = require('../middleware/uploadMiddleware');
 
@@ -21,6 +22,7 @@ const router = express.Router();
 
 router.get('/', protect, getStories);
 router.get('/sign-upload', protect, getStoryUploadSignature);
+router.post('/cleanup-media', protect, cleanupStoryMedia);
 router.post('/', protect, upload.single('storyImage'), createStory);
 router.put('/:id', protect, updateStory);
 router.delete('/:id', protect, deleteStory);

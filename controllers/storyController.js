@@ -737,6 +737,20 @@ const getStoryUploadSignature = async (req, res) => {
   }
 };
 
+const cleanupStoryMedia = async (req, res) => {
+  try {
+    const { publicId, resourceType } = req.body;
+    if (!publicId) {
+      return res.status(400).json({ success: false, error: 'publicId is required' });
+    }
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType || 'image' });
+    res.json({ success: true, message: 'Media cleaned up successfully' });
+  } catch (error) {
+    console.error('Error cleaning up media:', error);
+    res.status(500).json({ success: false, error: 'Server error cleaning up media' });
+  }
+};
+
 module.exports = {
   getStories,
   createStory,
@@ -750,5 +764,6 @@ module.exports = {
   getStoryLikes,
   replyStory,
   getStoryReplies,
-  getStoryUploadSignature
+  getStoryUploadSignature,
+  cleanupStoryMedia
 };

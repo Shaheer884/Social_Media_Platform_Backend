@@ -160,6 +160,13 @@ const createPost = async (req, res) => {
 
       // 2. Upload files to Cloudinary
       for (const file of files) {
+        if (req.destroyed) {
+          for (const m of media) {
+            await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+          }
+          return res.status(499).json({ success: false, error: 'Upload cancelled by client' });
+        }
+
         const isVideo = file.mimetype.startsWith('video/');
         const resourceType = isVideo ? 'video' : 'image';
         const folder = isVideo ? 'connecthub/posts/videos' : 'connecthub/posts/images';
@@ -176,6 +183,13 @@ const createPost = async (req, res) => {
           duration: result.duration || 0,
           size: result.bytes
         });
+      }
+
+      if (req.destroyed) {
+        for (const m of media) {
+          await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+        }
+        return res.status(499).json({ success: false, error: 'Upload cancelled by client' });
       }
     } else if (imageUrlUrl) {
       let formattedUrl = imageUrlUrl.trim();
@@ -214,6 +228,13 @@ const createPost = async (req, res) => {
       } catch (err) {
         console.error('Failed to parse location in createPost:', err);
       }
+    }
+
+    if (req.destroyed) {
+      for (const m of media) {
+        await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+      }
+      return res.status(499).json({ success: false, error: 'Upload cancelled by client' });
     }
 
     const newPost = await Post.create({
