@@ -12,13 +12,15 @@ const {
   getStoryViews,
   getStoryLikes,
   replyStory,
-  getStoryReplies
+  getStoryReplies,
+  getStoryUploadSignature
 } = require('../controllers/storyController');
 const upload = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
 
 router.get('/', protect, getStories);
+router.get('/sign-upload', protect, getStoryUploadSignature);
 router.post('/', protect, upload.single('storyImage'), createStory);
 router.put('/:id', protect, updateStory);
 router.delete('/:id', protect, deleteStory);

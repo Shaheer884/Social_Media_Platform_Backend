@@ -224,6 +224,32 @@ const createStory = async (req, res) => {
         duration: result.duration || 0,
         size: result.bytes
       });
+    } else if (req.body.imageUrl) {
+      imageUrl = req.body.imageUrl;
+      mediaType = req.body.mediaType || 'image';
+      cloudinaryPublicId = req.body.cloudinaryPublicId || '';
+
+      const parsedMedia = parseField(req.body.media);
+      if (parsedMedia && parsedMedia.length > 0) {
+        media.push(...parsedMedia);
+      } else {
+        media.push({
+          url: imageUrl,
+          publicId: cloudinaryPublicId,
+          resourceType: mediaType,
+          duration: req.body.duration || 0,
+          size: req.body.size || 0
+        });
+      }
+
+      // Backend validation for pre-uploaded media size limit
+      const isVideo = mediaType === 'video';
+      if (isVideo && media.some(m => m.size > 30 * 1024 * 1024)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Story video size cannot exceed 30 MB.'
+        });
+      }
     }
 
     if (!text && !imageUrl) {
@@ -685,6 +711,32 @@ const getStoryReplies = async (req, res) => {
   }
 };
 
+const getStoryUploadSignature = async (req, res) => {
+  try {
+    const { resourceType } = req.query;
+    const folder = resourceType === 'video' ? 'connecthub/stories/videos' : 'connecthub/stories/images';
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const signature = cloudinary.utils.api_sign_request(
+      {
+        timestamp,
+        folder
+      },
+      process.env.CLOUDINARY_API_SECRET
+    );
+    res.json({
+      success: true,
+      signature,
+      timestamp,
+      folder,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME
+    });
+  } catch (error) {
+    console.error('Error generating upload signature:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate upload signature' });
+  }
+};
+
 module.exports = {
   getStories,
   createStory,
@@ -697,5 +749,6 @@ module.exports = {
   getStoryViews,
   getStoryLikes,
   replyStory,
-  getStoryReplies
+  getStoryReplies,
+  getStoryUploadSignature
 };
