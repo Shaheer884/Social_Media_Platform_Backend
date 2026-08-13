@@ -198,10 +198,10 @@ const createStory = async (req, res) => {
         });
       }
 
-      if (isVideo && req.file.size > settings.maxVideoSize) {
+      if (isVideo && req.file.size > 30 * 1024 * 1024) {
         return res.status(400).json({
           success: false,
-          error: `Video ${req.file.originalname} exceeds the size limit of ${settings.maxVideoSize / (1024 * 1024)}MB.`
+          error: 'Story video size cannot exceed 30 MB.'
         });
       }
 

@@ -17,7 +17,7 @@ const getSettings = async () => {
       allowRegistration: true,
       requireEmailVerification: true,
       maxImageSize: 5 * 1024 * 1024,
-      maxVideoSize: 20 * 1024 * 1024,
+      maxVideoSize: 30 * 1024 * 1024,
       allowedImageTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
       allowedVideoTypes: ['video/mp4', 'video/mpeg', 'video/ogg', 'video/webm', 'video/quicktime'],
       defaultProfileImage: '/uploads/default-avatar.png'

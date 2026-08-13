@@ -27,7 +27,7 @@ const PlatformSettingsSchema = new mongoose.Schema({
   },
   maxVideoSize: {
     type: Number,
-    default: 20 * 1024 * 1024 // 20MB in bytes
+    default: 30 * 1024 * 1024 // 30MB in bytes
   },
   allowedImageTypes: {
     type: [String],
