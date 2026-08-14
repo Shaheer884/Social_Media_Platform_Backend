@@ -66,7 +66,8 @@ const registerUser = async (req, res) => {
       role: 'user', // strictly register as regular user
       isVerified: !requireVerification,
       verificationCode: requireVerification ? verificationCode : null,
-      verificationCodeExpires: requireVerification ? verificationCodeExpires : null
+      verificationCodeExpires: requireVerification ? verificationCodeExpires : null,
+      lastActiveAt: new Date()
     });
 
     if (user) {
@@ -176,6 +177,7 @@ const loginUser = async (req, res) => {
 
     // Update last login date
     user.lastLogin = new Date();
+    user.lastActiveAt = new Date();
     await user.save();
 
     res.json({

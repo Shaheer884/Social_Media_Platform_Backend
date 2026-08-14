@@ -50,6 +50,7 @@ const adminLogin = async (req, res) => {
 
     // Update lastLogin
     user.lastLogin = new Date();
+    user.lastActiveAt = new Date();
     await user.save();
 
     // Log action

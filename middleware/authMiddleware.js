@@ -33,6 +33,19 @@ const protect = async (req, res, next) => {
         return res.status(403).json({ success: false, error: 'Your account has been suspended.' });
       }
 
+      // Check rolling session expiry (7 days)
+      if (req.user.lastActiveAt) {
+        const diffTime = Math.abs(new Date() - new Date(req.user.lastActiveAt));
+        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+        if (diffDays > 7) {
+          return res.status(401).json({ success: false, error: 'Session Expired' });
+        }
+      }
+
+      // Update lastActiveAt to current date/time on activity
+      req.user.lastActiveAt = new Date();
+      await User.updateOne({ _id: req.user._id }, { $set: { lastActiveAt: req.user.lastActiveAt } });
+
       // Check maintenance mode
       const PlatformSettings = require('../admin/models/PlatformSettings');
       const settings = await PlatformSettings.findOne();

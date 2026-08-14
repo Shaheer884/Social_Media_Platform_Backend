@@ -30,6 +30,19 @@ const authenticateAdmin = async (req, res, next) => {
         return res.status(403).json({ success: false, error: 'Account has been deleted' });
       }
 
+      // Check rolling session expiry (7 days)
+      if (user.lastActiveAt) {
+        const diffTime = Math.abs(new Date() - new Date(user.lastActiveAt));
+        const diffDays = diffTime / (1000 * 60 * 60 * 24);
+        if (diffDays > 7) {
+          return res.status(401).json({ success: false, error: 'Session Expired' });
+        }
+      }
+
+      // Update lastActiveAt to current date/time on activity
+      user.lastActiveAt = new Date();
+      await User.updateOne({ _id: user._id }, { $set: { lastActiveAt: user.lastActiveAt } });
+
       req.user = user;
       next();
     } catch (error) {
