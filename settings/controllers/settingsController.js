@@ -71,6 +71,7 @@ const updateAccountDetails = async (req, res) => {
       phone,
       website,
       birthday,
+      birthdayPrivacy,
       gender,
       location,
       profilePictureUrl,
@@ -113,6 +114,9 @@ const updateAccountDetails = async (req, res) => {
     if (gender !== undefined) user.gender = gender;
     if (birthday !== undefined) {
       user.birthday = birthday ? new Date(birthday) : null;
+    }
+    if (birthdayPrivacy !== undefined) {
+      user.birthdayPrivacy = birthdayPrivacy;
     }
 
     // Handle files if uploaded via multer
