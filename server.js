@@ -54,6 +54,7 @@ const commentRoutes = require('./routes/commentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const birthdayRoutes = require('./routes/birthdayRoutes');
+const settingsRoutes = require('./settings/routes/settingsRoutes');
 const { startBirthdayChecker } = require('./utils/birthdayChecker');
 
 // Mount routes
@@ -66,6 +67,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/stories', storyRoutes);
 app.use('/api/birthday', birthdayRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Start background birthday scheduler
 startBirthdayChecker();

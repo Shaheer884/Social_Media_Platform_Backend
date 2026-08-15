@@ -21,6 +21,29 @@ const checkStoryAccess = async (story, viewerId) => {
     return true;
   }
 
+  // Check block list
+  const viewerUser = await User.findById(viewerId);
+  const isBlockedByViewer = viewerUser && viewerUser.blockedUsers && viewerUser.blockedUsers.some(b => b.user.toString() === ownerId.toString());
+
+  let ownerDoc = story.user;
+  if (!ownerDoc || !ownerDoc.blockedUsers) {
+    ownerDoc = await User.findById(ownerId).select('followers following blockedUsers isPrivate');
+    if (!ownerDoc) return false;
+  }
+
+  const isBlockedByOwner = ownerDoc.blockedUsers && ownerDoc.blockedUsers.some(b => b.user.toString() === viewerId.toString());
+  if (isBlockedByViewer || isBlockedByOwner) {
+    return false;
+  }
+
+  // Private Account Check
+  if (ownerDoc.isPrivate) {
+    const isFollower = ownerDoc.followers && ownerDoc.followers.some(id => id.toString() === viewerId.toString());
+    if (!isFollower) {
+      return false;
+    }
+  }
+
   // Check expiration (24 hours)
   const activeTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
   if (story.createdAt < activeTime) {
@@ -82,15 +105,14 @@ const getStories = async (req, res) => {
     const feedUserIds = [...user.following, user._id];
     const activeTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // Find all users in feedUserIds who are private (isPrivate: true) and NOT the current user
-    const privateUsers = await User.find({
-      _id: { $in: feedUserIds, $ne: req.user.id },
-      isPrivate: true
-    }).select('_id');
-    const privateUserIds = privateUsers.map(u => u._id.toString());
+    // Find blocked users and users who blocked me
+    const blockedUserIds = (user.blockedUsers || []).map(b => b.user.toString());
+    const usersWhoBlockedMe = await User.find({ 'blockedUsers.user': req.user.id }).select('_id');
+    const usersWhoBlockedMeIds = usersWhoBlockedMe.map(u => u._id.toString());
+    const allExcludedUserIds = [...blockedUserIds, ...usersWhoBlockedMeIds];
 
-    // Filter feedUserIds to exclude private users
-    const filteredFeedUserIds = feedUserIds.filter(id => !privateUserIds.includes(id.toString()));
+    // Filter feedUserIds to exclude blocked accounts
+    const filteredFeedUserIds = feedUserIds.filter(id => !allExcludedUserIds.includes(id.toString()));
 
     // Get stories created in the last 24 hours
     const stories = await Story.find({

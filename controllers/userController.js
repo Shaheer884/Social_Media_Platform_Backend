@@ -22,6 +22,13 @@ const getUserProfile = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    // Check block list
+    const isBlockedByB = user.blockedUsers && user.blockedUsers.some(b => b.user.toString() === req.user.id);
+    const isBlockedByA = req.user.blockedUsers && req.user.blockedUsers.some(b => b.user.toString() === user._id.toString());
+    if (isBlockedByB || isBlockedByA) {
+      return res.status(403).json({ success: false, error: 'Access denied: Blocked user relationship' });
+    }
+
     // Get user's post count
     const postCount = await Post.countDocuments({ author: user._id });
 
@@ -30,17 +37,21 @@ const getUserProfile = async (req, res) => {
     if (user._id.toString() !== req.user.id) {
       const isFollowing = user.followers.some(f => f._id.toString() === req.user.id);
       const isFollowedBy = user.following.some(f => f._id.toString() === req.user.id);
+      const isPending = user.followRequests && user.followRequests.some(id => id.toString() === req.user.id);
+
       if (isFollowing && isFollowedBy) {
         relationshipStatus = 'friends';
       } else if (isFollowing) {
         relationshipStatus = 'following';
       } else if (isFollowedBy) {
         relationshipStatus = 'follow_back';
+      } else if (isPending) {
+        relationshipStatus = 'requested';
       }
     }
 
-    // Filter profile and cover image if account is private and viewer is not the owner and not friends
-    const showPrivateMedia = !user.isPrivate || (user._id.toString() === req.user.id) || relationshipStatus === 'friends';
+    // Filter profile and cover image if account is private and viewer is not the owner and not following/friends
+    const showPrivateMedia = !user.isPrivate || (user._id.toString() === req.user.id) || relationshipStatus === 'friends' || relationshipStatus === 'following';
     const profilePicture = showPrivateMedia ? user.profilePicture : '/uploads/default-avatar.png';
     const coverPhoto = showPrivateMedia ? user.coverPhoto : '/uploads/default-cover.png';
 
@@ -326,8 +337,40 @@ const followUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    // Check block list
+    const isBlockedByTarget = userToFollow.blockedUsers && userToFollow.blockedUsers.some(b => b.user.toString() === req.user.id);
+    const isBlockedBySelf = currentUser.blockedUsers && currentUser.blockedUsers.some(b => b.user.toString() === userToFollow._id.toString());
+    if (isBlockedByTarget || isBlockedBySelf) {
+      return res.status(403).json({ success: false, error: 'Cannot follow a blocked user or be followed by someone you blocked.' });
+    }
+
     if (currentUser.following.includes(req.params.id)) {
       return res.status(400).json({ success: false, error: 'You are already following this user' });
+    }
+
+    // If target is private, add a follow request
+    if (userToFollow.isPrivate) {
+      const isAlreadyRequested = userToFollow.followRequests && userToFollow.followRequests.some(id => id.toString() === req.user.id);
+      if (isAlreadyRequested) {
+        return res.status(400).json({ success: false, error: 'Follow request already pending' });
+      }
+
+      userToFollow.followRequests.push(req.user.id);
+      await userToFollow.save();
+
+      // Create Notification for follow request
+      await Notification.create({
+        recipient: userToFollow._id,
+        type: 'follow-request',
+        sender: currentUser._id,
+        message: 'requested to follow you'
+      });
+
+      return res.json({
+        success: true,
+        message: 'Follow request sent',
+        relationshipStatus: 'requested'
+      });
     }
 
     // Add to following/followers lists
@@ -451,10 +494,17 @@ const searchUsers = async (req, res) => {
     }
 
     // 1. Search Users
+    const blockedUserIds = (req.user.blockedUsers || []).map(b => b.user);
     const users = await User.find({
-      $or: [
-        { username: { $regex: query, $options: 'i' } },
-        { fullName: { $regex: query, $options: 'i' } }
+      $and: [
+        {
+          $or: [
+            { username: { $regex: query, $options: 'i' } },
+            { fullName: { $regex: query, $options: 'i' } }
+          ]
+        },
+        { _id: { $nin: blockedUserIds } },
+        { 'blockedUsers.user': { $ne: req.user.id } }
       ]
     }).select('username fullName profilePicture bio followers following').limit(10);
 

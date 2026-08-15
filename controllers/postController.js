@@ -26,15 +26,14 @@ const getPostFeed = async (req, res) => {
     // Feed includes followed users' posts + own posts
     const feedUserIds = [...user.following, user._id];
 
-    // Find all users in feedUserIds who are private (isPrivate: true) and NOT the current user
-    const privateUsers = await User.find({
-      _id: { $in: feedUserIds, $ne: req.user.id },
-      isPrivate: true
-    }).select('_id');
-    const privateUserIds = privateUsers.map(u => u._id.toString());
+    // Find blocked users and users who blocked me
+    const blockedUserIds = (user.blockedUsers || []).map(b => b.user.toString());
+    const usersWhoBlockedMe = await User.find({ 'blockedUsers.user': req.user.id }).select('_id');
+    const usersWhoBlockedMeIds = usersWhoBlockedMe.map(u => u._id.toString());
+    const allExcludedUserIds = [...blockedUserIds, ...usersWhoBlockedMeIds];
 
-    // Filter feedUserIds to exclude those private users
-    const filteredFeedUserIds = feedUserIds.filter(id => !privateUserIds.includes(id.toString()));
+    // Filter feedUserIds to exclude blocked accounts
+    const filteredFeedUserIds = feedUserIds.filter(id => !allExcludedUserIds.includes(id.toString()));
 
     // Fetch friends list of current user to filter posts with 'Friends' audience
     const friendUsers = await User.find({
@@ -46,6 +45,9 @@ const getPostFeed = async (req, res) => {
     // Build feed query with audience permissions
     const feedQuery = {
       author: { $in: filteredFeedUserIds },
+      isDeleted: false,
+      isHidden: false,
+      isArchived: { $ne: true },
       $or: [
         { author: req.user.id },
         {
@@ -289,6 +291,16 @@ const getPostById = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Post not found' });
     }
 
+    // Check block list
+    const postAuthor = await User.findById(post.author._id);
+    if (postAuthor) {
+      const isBlockedByAuthor = postAuthor.blockedUsers && postAuthor.blockedUsers.some(b => b.user.toString() === req.user.id);
+      const isBlockedBySelf = req.user.blockedUsers && req.user.blockedUsers.some(b => b.user.toString() === postAuthor._id.toString());
+      if (isBlockedByAuthor || isBlockedBySelf) {
+        return res.status(403).json({ success: false, error: 'Access denied: Blocked user relationship' });
+      }
+    }
+
     // Check post audience permissions
     const isAuthor = post.author._id.toString() === req.user.id;
     if (post.audience === 'Only me' && !isAuthor) {
@@ -365,10 +377,16 @@ const updatePost = async (req, res) => {
       return res.status(401).json({ success: false, error: 'Not authorized to edit this post' });
     }
 
-    const { content, imageUrlUrl } = req.body;
+    const { content, imageUrlUrl, isHidden, isArchived } = req.body;
     post.content = content !== undefined ? content : post.content;
     if (req.body.bgColor !== undefined) {
       post.bgColor = req.body.bgColor;
+    }
+    if (isHidden !== undefined) {
+      post.isHidden = isHidden === 'true' || isHidden === true;
+    }
+    if (isArchived !== undefined) {
+      post.isArchived = isArchived === 'true' || isArchived === true;
     }
 
     // 1. Determine remaining media
@@ -596,6 +614,16 @@ const likePost = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Post not found' });
     }
 
+    // Check block list
+    const postAuthor = await User.findById(post.author);
+    if (postAuthor) {
+      const isBlockedByAuthor = postAuthor.blockedUsers && postAuthor.blockedUsers.some(b => b.user.toString() === req.user.id);
+      const isBlockedBySelf = req.user.blockedUsers && req.user.blockedUsers.some(b => b.user.toString() === postAuthor._id.toString());
+      if (isBlockedByAuthor || isBlockedBySelf) {
+        return res.status(403).json({ success: false, error: 'Access denied: Blocked user relationship' });
+      }
+    }
+
     if (post.likes.includes(req.user.id)) {
       return res.status(400).json({ success: false, error: 'Post already liked' });
     }
@@ -655,16 +683,31 @@ const getUserPosts = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    // Exclude posts if target user is private and is not the current user
-    if (targetUser.isPrivate && req.params.userId !== req.user.id) {
+    // Check block list
+    const isBlockedByTarget = targetUser.blockedUsers && targetUser.blockedUsers.some(b => b.user.toString() === req.user.id);
+    const isBlockedBySelf = req.user.blockedUsers && req.user.blockedUsers.some(b => b.user.toString() === targetUser._id.toString());
+    if (isBlockedByTarget || isBlockedBySelf) {
+      return res.status(403).json({ success: false, error: 'Access denied: Blocked user relationship' });
+    }
+
+    // Exclude posts if target user is private and current user is not owner and not follower
+    const isFollowerOfTarget = targetUser.followers.some(id => id.toString() === req.user.id);
+    if (targetUser.isPrivate && req.params.userId !== req.user.id && !isFollowerOfTarget) {
       return res.json({ success: true, data: [] });
     }
 
     const currentUser = await User.findById(req.user.id);
     const savedPostIds = currentUser ? (currentUser.savedPosts || []).map(id => id.toString()) : [];
 
-    let postQuery = { author: req.params.userId };
+    let postQuery = {
+      author: req.params.userId,
+      isDeleted: false
+    };
+
     if (req.params.userId !== req.user.id) {
+      postQuery.isHidden = false;
+      postQuery.isArchived = { $ne: true };
+
       // Check if they are friends
       const isFollowing = targetUser.followers.some(id => id.toString() === req.user.id);
       const isFollowedBy = targetUser.following.some(id => id.toString() === req.user.id);

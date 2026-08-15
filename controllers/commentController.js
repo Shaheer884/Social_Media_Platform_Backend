@@ -1,6 +1,7 @@
 const Comment = require('../models/Comment');
 const Post = require('../models/Post');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 
 // @desc    Get comments for a post
 // @route   GET /api/posts/:id/comments
@@ -32,6 +33,61 @@ const createComment = async (req, res) => {
     const post = await Post.findById(req.params.id);
     if (!post) {
       return res.status(404).json({ success: false, error: 'Post not found' });
+    }
+
+    const author = await User.findById(post.author);
+    if (!author) {
+      return res.status(404).json({ success: false, error: 'Post author not found' });
+    }
+
+    // Check block list
+    const isBlockedByAuthor = author.blockedUsers && author.blockedUsers.some(b => b.user.toString() === req.user.id);
+    const isBlockedBySelf = req.user.blockedUsers && req.user.blockedUsers.some(b => b.user.toString() === author._id.toString());
+    if (isBlockedByAuthor || isBlockedBySelf) {
+      return res.status(403).json({ success: false, error: 'Access denied: Blocked user relationship' });
+    }
+
+    // Check comment settings
+    if (author._id.toString() !== req.user.id) {
+      const commentPolicy = (author.commentSettings && author.commentSettings.whoCanComment) || 'Everyone';
+
+      if (commentPolicy === 'Only Me') {
+        return res.status(403).json({ success: false, error: 'Only the author can comment on this post.' });
+      }
+
+      const isFollowing = author.followers.some(id => id.toString() === req.user.id);
+
+      if (commentPolicy === 'Followers') {
+        if (!isFollowing) {
+          return res.status(403).json({ success: false, error: 'Only followers of the author can comment on this post.' });
+        }
+      }
+
+      if (commentPolicy === 'Friends') {
+        const isFollowedBy = author.following.some(id => id.toString() === req.user.id);
+        const isFriend = isFollowing && isFollowedBy;
+        if (!isFriend) {
+          return res.status(403).json({ success: false, error: 'Only friends (mutual followers) can comment on this post.' });
+        }
+      }
+
+      // Check Emoji and GIF blocks (if settings specifically disable them)
+      if (author.commentSettings) {
+        if (author.commentSettings.allowEmoji === false) {
+          // Check for emoji character presence (rough check for common emoji unicode blocks)
+          const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/g;
+          if (emojiRegex.test(content)) {
+            return res.status(400).json({ success: false, error: 'Emojis are not allowed on this post by the author.' });
+          }
+        }
+
+        if (author.commentSettings.allowGif === false) {
+          // Check if it is a gif image link or text containing gif
+          if (content.toLowerCase().includes('.gif') || content.toLowerCase().includes('giphy.com') || content.toLowerCase().includes('tenor.com')) {
+            return res.status(400).json({ success: false, error: 'GIFs are not allowed on this post by the author.' });
+          }
+        }
+      }
     }
 
     const newComment = await Comment.create({

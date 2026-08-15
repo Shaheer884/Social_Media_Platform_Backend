@@ -113,6 +113,66 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  phone: {
+    type: String,
+    default: ''
+  },
+  website: {
+    type: String,
+    default: ''
+  },
+  gender: {
+    type: String,
+    enum: ['Male', 'Female', 'Other', 'Prefer not to say', ''],
+    default: ''
+  },
+  theme: {
+    type: String,
+    enum: ['light', 'dark', 'system'],
+    default: 'system'
+  },
+  notificationPreferences: {
+    likes: { type: Boolean, default: true },
+    comments: { type: Boolean, default: true },
+    replies: { type: Boolean, default: true },
+    friendRequests: { type: Boolean, default: true },
+    followers: { type: Boolean, default: true },
+    mentions: { type: Boolean, default: true },
+    birthdayReminders: { type: Boolean, default: true },
+    adminAnnouncements: { type: Boolean, default: true },
+    storyNotifications: { type: Boolean, default: true },
+    postNotifications: { type: Boolean, default: true }
+  },
+  commentSettings: {
+    whoCanComment: {
+      type: String,
+      enum: ['Everyone', 'Followers', 'Friends', 'Only Me'],
+      default: 'Everyone'
+    },
+    allowEmoji: { type: Boolean, default: true },
+    allowGif: { type: Boolean, default: true },
+    filterOffensive: { type: Boolean, default: false },
+    hideSpam: { type: Boolean, default: false },
+    autoModerate: { type: Boolean, default: false }
+  },
+  blockedUsers: [
+    {
+      user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      blockedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
+  followRequests: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ],
   role: {
     type: String,
     enum: ['user', 'admin'],
