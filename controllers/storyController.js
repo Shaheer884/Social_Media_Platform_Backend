@@ -177,7 +177,6 @@ const getStories = async (req, res) => {
 // @route   POST /api/stories
 // @access  Protected
 const createStory = async (req, res) => {
-const createStory = async (req, res) => {
   let media = [];
   try {
     const { text, backgroundColor, privacy, allowedUsers, hiddenUsers, mentions, imageUrl: bodyImageUrl, mediaType: bodyMediaType, cloudinaryPublicId: bodyPublicId } = req.body;
