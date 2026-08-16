@@ -25,6 +25,12 @@ const DEFAULT_COVER_SVG = `
 </svg>
 `.trim();
 
+const { protect } = require('../middleware/authMiddleware');
+const { getUploadSignature, cleanupMedia } = require('../controllers/uploadController');
+
+router.get('/signature', protect, getUploadSignature);
+router.post('/cleanup', protect, cleanupMedia);
+
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;

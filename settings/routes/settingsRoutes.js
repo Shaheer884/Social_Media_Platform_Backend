@@ -25,10 +25,6 @@ router.get('/', protect, getSettings);
 router.put(
   '/account',
   protect,
-  upload.fields([
-    { name: 'profilePicture', maxCount: 1 },
-    { name: 'coverPhoto', maxCount: 1 }
-  ]),
   updateAccountDetails
 );
 

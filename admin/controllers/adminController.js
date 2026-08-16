@@ -694,34 +694,37 @@ const updateAdminProfile = async (req, res) => {
       admin.passwordHash = await bcrypt.hash(password, salt);
     }
 
-    // Handle profile picture file upload if provided
-    if (req.files && req.files.profilePicture) {
-      const file = req.files.profilePicture[0];
-      const { getSettings } = require('../utils/settingsHelper');
-      const settings = await getSettings();
+    // Handle pre-uploaded profile picture details
+    const { profilePicture, profilePicturePublicId, profilePictureSize, profilePictureFormat } = req.body;
+    const oldAvatarPublicId = (profilePicturePublicId && profilePicturePublicId !== admin.profilePicturePublicId) ? admin.profilePicturePublicId : null;
 
-      if (!settings.allowedImageTypes.includes(file.mimetype)) {
-        return res.status(400).json({ success: false, error: `Image type not allowed. Supported: ${settings.allowedImageTypes.join(', ')}` });
+    if (profilePicturePublicId && profilePicturePublicId !== admin.profilePicturePublicId) {
+      // Validate image metadata
+      if (profilePictureSize && profilePictureSize > 10 * 1024 * 1024) {
+        await cloudinary.uploader.destroy(profilePicturePublicId).catch(() => {});
+        return res.status(400).json({ success: false, error: 'Profile picture exceeds 10MB limit.' });
       }
-      if (file.size > settings.maxImageSize) {
-        return res.status(400).json({ success: false, error: `Image size exceeds limit of ${settings.maxImageSize / (1024 * 1024)}MB.` });
-      }
-
-      // Delete old profile picture if exists on Cloudinary
-      if (admin.profilePicturePublicId) {
-        try {
-          await cloudinary.uploader.destroy(admin.profilePicturePublicId);
-        } catch (err) {
-          console.error('Failed to delete old admin avatar:', err);
-        }
+      const format = (profilePictureFormat || '').toLowerCase();
+      const allowedFormats = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+      if (profilePictureFormat && !allowedFormats.includes(format)) {
+        await cloudinary.uploader.destroy(profilePicturePublicId).catch(() => {});
+        return res.status(400).json({ success: false, error: `Profile picture format "${profilePictureFormat}" is not supported.` });
       }
 
-      const uploadResult = await uploadStream(file.buffer, 'connecthub/profiles/avatars', 'image');
-      admin.profilePicture = uploadResult.secure_url;
-      admin.profilePicturePublicId = uploadResult.public_id;
+      admin.profilePicture = profilePicture;
+      admin.profilePicturePublicId = profilePicturePublicId;
     }
 
     await admin.save();
+
+    // Delete old avatar from Cloudinary on success
+    if (oldAvatarPublicId) {
+      try {
+        await cloudinary.uploader.destroy(oldAvatarPublicId);
+      } catch (err) {
+        console.error('Failed to delete old admin avatar:', err);
+      }
+    }
 
     res.json({
       success: true,
@@ -736,6 +739,9 @@ const updateAdminProfile = async (req, res) => {
       }
     });
   } catch (error) {
+    if (profilePicturePublicId && admin && profilePicturePublicId !== admin.profilePicturePublicId) {
+      await cloudinary.uploader.destroy(profilePicturePublicId).catch(() => {});
+    }
     console.error('Update admin profile error:', error);
     res.status(500).json({ success: false, error: 'Server error during profile update' });
   }

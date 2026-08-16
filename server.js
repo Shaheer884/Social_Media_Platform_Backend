@@ -42,9 +42,10 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Route for database uploads
+// Route for database uploads and Cloudinary upload signing/cleanup
 const uploadRoutes = require('./routes/uploadRoutes');
 app.use('/uploads', uploadRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');

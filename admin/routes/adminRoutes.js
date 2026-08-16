@@ -50,7 +50,7 @@ router.get('/settings/public', getSettingsPublic);
 router.post('/reports', protect, submitReport);
 
 // Admin-only protected routes
-router.put('/profile', authenticateAdmin, upload.fields([{ name: 'profilePicture', maxCount: 1 }]), updateAdminProfile);
+router.put('/profile', authenticateAdmin, updateAdminProfile);
 router.get('/stats', authenticateAdmin, getStats);
 router.get('/trending', authenticateAdmin, getTrending);
 router.get('/recycle-bin', authenticateAdmin, getRecycleBin);

@@ -104,94 +104,95 @@ const getPostFeed = async (req, res) => {
 // @route   POST /api/posts
 // @access  Protected
 const createPost = async (req, res) => {
+  let media = [];
   try {
     const { content, imageUrlUrl, feeling, activity, bgColor, audience } = req.body;
 
-    const files = req.files || [];
+    media = req.body.media || [];
+    if (typeof media === 'string') {
+      try {
+        media = JSON.parse(media);
+      } catch (err) {
+        media = [];
+      }
+    }
 
-    if (!content && files.length === 0 && !imageUrlUrl) {
+    if (!content && media.length === 0 && !imageUrlUrl) {
       return res.status(400).json({ success: false, error: 'Post must contain content or media' });
     }
 
-    const media = [];
-
-    // 1. Validate files if present
-    if (files.length > 0) {
-      const { getSettings } = require('../admin/utils/settingsHelper');
-      const settings = await getSettings();
-
-      for (const file of files) {
-        const isVideo = file.mimetype.startsWith('video/');
-        const isImage = file.mimetype.startsWith('image/');
-
-        if (isImage && !settings.allowedImageTypes.includes(file.mimetype)) {
-          return res.status(400).json({
-            success: false,
-            error: `Unsupported image type for file: ${file.originalname}. Supported types: ${settings.allowedImageTypes.join(', ')}`
-          });
-        }
-
-        if (isVideo && !settings.allowedVideoTypes.includes(file.mimetype)) {
-          return res.status(400).json({
-            success: false,
-            error: `Unsupported video type for file: ${file.originalname}. Supported types: ${settings.allowedVideoTypes.join(', ')}`
-          });
-        }
-
-        if (!isVideo && !isImage) {
-          return res.status(400).json({
-            success: false,
-            error: `Unsupported file type for file: ${file.originalname}.`
-          });
-        }
-
-        if (isImage && file.size > settings.maxImageSize) {
-          return res.status(400).json({
-            success: false,
-            error: `Image ${file.originalname} exceeds the size limit of ${settings.maxImageSize / (1024 * 1024)}MB.`
-          });
-        }
-
-        if (isVideo && file.size > settings.maxVideoSize) {
-          return res.status(400).json({
-            success: false,
-            error: `Video ${file.originalname} exceeds the size limit of ${settings.maxVideoSize / (1024 * 1024)}MB.`
-          });
-        }
-      }
-
-      // 2. Upload files to Cloudinary
-      for (const file of files) {
-        if (req.destroyed) {
-          for (const m of media) {
-            await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
-          }
-          return res.status(499).json({ success: false, error: 'Upload cancelled by client' });
-        }
-
-        const isVideo = file.mimetype.startsWith('video/');
-        const resourceType = isVideo ? 'video' : 'image';
-        const folder = isVideo ? 'connecthub/posts/videos' : 'connecthub/posts/images';
-
-        const result = await uploadStream(file.buffer, folder, resourceType);
-
-        media.push({
-          url: result.secure_url,
-          publicId: result.public_id,
-          resourceType: result.resource_type || resourceType,
-          format: result.format,
-          width: result.width,
-          height: result.height,
-          duration: result.duration || 0,
-          size: result.bytes
-        });
-      }
-
-      if (req.destroyed) {
+    // Centralized backend metadata validation
+    if (media.length > 0) {
+      if (media.length > 10) {
         for (const m of media) {
-          await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
+          if (m.publicId && !m.publicId.startsWith('external_url_')) {
+            await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' }).catch(() => {});
+          }
         }
-        return res.status(499).json({ success: false, error: 'Upload cancelled by client' });
+        return res.status(400).json({ success: false, error: 'Maximum post media limit is 10 items.' });
+      }
+
+      for (const m of media) {
+        const isVideo = m.resourceType === 'video';
+        const isImage = m.resourceType === 'image';
+
+        if (!isImage && !isVideo) {
+          for (const item of media) {
+            if (item.publicId && !item.publicId.startsWith('external_url_')) {
+              await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+            }
+          }
+          return res.status(400).json({ success: false, error: 'Unsupported media type.' });
+        }
+
+        const formatLower = (m.format || '').toLowerCase();
+        if (isImage) {
+          const allowedFormats = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+          if (m.format && !allowedFormats.includes(formatLower)) {
+            for (const item of media) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: `Unsupported image format: ${m.format}.` });
+          }
+          if (m.size > 10 * 1024 * 1024) {
+            for (const item of media) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Image exceeds the 10MB size limit.' });
+          }
+        }
+
+        if (isVideo) {
+          const allowedFormats = ['mp4', 'mov', 'quicktime', 'webm'];
+          if (m.format && !allowedFormats.includes(formatLower)) {
+            for (const item of media) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: `Unsupported video format: ${m.format}.` });
+          }
+          if (m.size > 30 * 1024 * 1024) {
+            for (const item of media) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Video exceeds the 30MB size limit.' });
+          }
+          if (m.duration > 300) {
+            for (const item of media) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Video duration exceeds the 5 minutes limit.' });
+          }
+        }
       }
     } else if (imageUrlUrl) {
       let formattedUrl = imageUrlUrl.trim();
@@ -232,13 +233,6 @@ const createPost = async (req, res) => {
       }
     }
 
-    if (req.destroyed) {
-      for (const m of media) {
-        await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' });
-      }
-      return res.status(499).json({ success: false, error: 'Upload cancelled by client' });
-    }
-
     const newPost = await Post.create({
       author: req.user.id,
       content,
@@ -273,6 +267,14 @@ const createPost = async (req, res) => {
       }
     });
   } catch (error) {
+    // Failed upload cleanup to prevent orphan resources
+    if (media && media.length > 0) {
+      for (const m of media) {
+        if (m.publicId && !m.publicId.startsWith('external_url_')) {
+          await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' }).catch(() => {});
+        }
+      }
+    }
     console.error('Error creating post:', error);
     res.status(500).json({ success: false, error: 'Server error creating post' });
   }
@@ -365,6 +367,7 @@ const getPostById = async (req, res) => {
 // @route   PUT /api/posts/:id
 // @access  Protected
 const updatePost = async (req, res) => {
+  let newMedia = [];
   try {
     let post = await Post.findById(req.params.id);
 
@@ -393,12 +396,13 @@ const updatePost = async (req, res) => {
     let remainingMedia = [];
     if (req.body.existingMedia) {
       try {
-        remainingMedia = JSON.parse(req.body.existingMedia);
+        remainingMedia = typeof req.body.existingMedia === 'string'
+          ? JSON.parse(req.body.existingMedia)
+          : req.body.existingMedia;
       } catch (err) {
         remainingMedia = [];
       }
     } else {
-      // Default to keeping current media if existingMedia field not sent
       remainingMedia = post.media || [];
     }
 
@@ -416,72 +420,79 @@ const updatePost = async (req, res) => {
       }
     }
 
-    // 3. Validate new files if any
-    const files = req.files || [];
-    const newMediaItems = [];
-
-    if (files.length > 0) {
-      const { getSettings } = require('../admin/utils/settingsHelper');
-      const settings = await getSettings();
-
-      for (const file of files) {
-        const isVideo = file.mimetype.startsWith('video/');
-        const isImage = file.mimetype.startsWith('image/');
-
-        if (isImage && !settings.allowedImageTypes.includes(file.mimetype)) {
-          return res.status(400).json({
-            success: false,
-            error: `Unsupported image type for file: ${file.originalname}. Supported types: ${settings.allowedImageTypes.join(', ')}`
-          });
-        }
-
-        if (isVideo && !settings.allowedVideoTypes.includes(file.mimetype)) {
-          return res.status(400).json({
-            success: false,
-            error: `Unsupported video type for file: ${file.originalname}. Supported types: ${settings.allowedVideoTypes.join(', ')}`
-          });
-        }
-
-        if (!isVideo && !isImage) {
-          return res.status(400).json({
-            success: false,
-            error: `Unsupported file type for file: ${file.originalname}.`
-          });
-        }
-
-        if (isImage && file.size > settings.maxImageSize) {
-          return res.status(400).json({
-            success: false,
-            error: `Image ${file.originalname} exceeds the size limit of ${settings.maxImageSize / (1024 * 1024)}MB.`
-          });
-        }
-
-        if (isVideo && file.size > settings.maxVideoSize) {
-          return res.status(400).json({
-            success: false,
-            error: `Video ${file.originalname} exceeds the size limit of ${settings.maxVideoSize / (1024 * 1024)}MB.`
-          });
-        }
+    // 3. Parse and validate new media if sent by client
+    newMedia = req.body.newMedia || [];
+    if (typeof newMedia === 'string') {
+      try {
+        newMedia = JSON.parse(newMedia);
+      } catch (err) {
+        newMedia = [];
       }
+    }
 
-      // 4. Upload new files to Cloudinary
-      for (const file of files) {
-        const isVideo = file.mimetype.startsWith('video/');
-        const resourceType = isVideo ? 'video' : 'image';
-        const folder = isVideo ? 'connecthub/posts/videos' : 'connecthub/posts/images';
+    if (newMedia.length > 0) {
+      // Validate new files
+      for (const m of newMedia) {
+        const isVideo = m.resourceType === 'video';
+        const isImage = m.resourceType === 'image';
 
-        const result = await uploadStream(file.buffer, folder, resourceType);
+        if (!isImage && !isVideo) {
+          for (const item of newMedia) {
+            if (item.publicId && !item.publicId.startsWith('external_url_')) {
+              await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+            }
+          }
+          return res.status(400).json({ success: false, error: 'Unsupported media type.' });
+        }
 
-        newMediaItems.push({
-          url: result.secure_url,
-          publicId: result.public_id,
-          resourceType: result.resource_type || resourceType,
-          format: result.format,
-          width: result.width,
-          height: result.height,
-          duration: result.duration || 0,
-          size: result.bytes
-        });
+        const formatLower = (m.format || '').toLowerCase();
+        if (isImage) {
+          const allowedFormats = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+          if (m.format && !allowedFormats.includes(formatLower)) {
+            for (const item of newMedia) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: `Unsupported image format: ${m.format}.` });
+          }
+          if (m.size > 10 * 1024 * 1024) {
+            for (const item of newMedia) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Image exceeds the 10MB size limit.' });
+          }
+        }
+
+        if (isVideo) {
+          const allowedFormats = ['mp4', 'mov', 'quicktime', 'webm'];
+          if (m.format && !allowedFormats.includes(formatLower)) {
+            for (const item of newMedia) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: `Unsupported video format: ${m.format}.` });
+          }
+          if (m.size > 30 * 1024 * 1024) {
+            for (const item of newMedia) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Video exceeds the 30MB size limit.' });
+          }
+          if (m.duration > 300) {
+            for (const item of newMedia) {
+              if (item.publicId && !item.publicId.startsWith('external_url_')) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Video duration exceeds the 5 minutes limit.' });
+          }
+        }
       }
     } else if (imageUrlUrl) {
       // If client sent imageUrlUrl and we didn't have it before
@@ -491,7 +502,7 @@ const updatePost = async (req, res) => {
         if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
           formattedUrl = 'https://' + formattedUrl;
         }
-        newMediaItems.push({
+        newMedia.push({
           url: formattedUrl,
           publicId: 'external_url_' + Date.now(),
           resourceType: 'image',
@@ -505,7 +516,7 @@ const updatePost = async (req, res) => {
     }
 
     // Combine remaining and new media
-    post.media = [...remainingMedia, ...newMediaItems];
+    post.media = [...remainingMedia, ...newMedia];
 
     // Update legacy fields for backward compatibility
     if (post.media.length > 0) {
@@ -543,6 +554,14 @@ const updatePost = async (req, res) => {
 
     res.json({ success: true, data: populated });
   } catch (error) {
+    // Failed upload cleanup to prevent orphan files in storage on DB error
+    if (newMedia && newMedia.length > 0) {
+      for (const m of newMedia) {
+        if (m.publicId && !m.publicId.startsWith('external_url_')) {
+          await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' }).catch(() => {});
+        }
+      }
+    }
     console.error('Error updating post:', error);
     res.status(500).json({ success: false, error: 'Server error updating post' });
   }

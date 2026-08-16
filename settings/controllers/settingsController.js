@@ -57,8 +57,11 @@ const getSettings = async (req, res) => {
 // @route   PUT /api/settings/account
 // @access  Protected
 const updateAccountDetails = async (req, res) => {
+  let profilePicturePublicId = '';
+  let coverPhotoPublicId = '';
+  let user;
   try {
-    const user = await User.findById(req.user.id);
+    user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -74,9 +77,16 @@ const updateAccountDetails = async (req, res) => {
       birthdayPrivacy,
       gender,
       location,
-      profilePictureUrl,
-      coverPhotoUrl
+      profilePicture,
+      profilePictureSize,
+      profilePictureFormat,
+      coverPhoto,
+      coverPhotoSize,
+      coverPhotoFormat
     } = req.body;
+
+    profilePicturePublicId = req.body.profilePicturePublicId || '';
+    coverPhotoPublicId = req.body.coverPhotoPublicId || '';
 
     // Validate Username
     if (username && username.trim().toLowerCase() !== user.username.toLowerCase()) {
@@ -119,55 +129,60 @@ const updateAccountDetails = async (req, res) => {
       user.birthdayPrivacy = birthdayPrivacy;
     }
 
-    // Handle files if uploaded via multer
-    if (req.files) {
-      const { getSettings: getAdminSettings } = require('../../admin/utils/settingsHelper');
-      const adminSettings = await getAdminSettings();
+    // Keep track of newly uploaded publicIds so we can clean them up on failure
+    const newUploads = [];
+    if (profilePicturePublicId && profilePicturePublicId !== user.profilePicturePublicId) {
+      newUploads.push({ publicId: profilePicturePublicId, type: 'image' });
+    }
+    if (coverPhotoPublicId && coverPhotoPublicId !== user.coverPhotoPublicId) {
+      newUploads.push({ publicId: coverPhotoPublicId, type: 'image' });
+    }
 
-      // Validate uploads
-      if (req.files.profilePicture) {
-        const file = req.files.profilePicture[0];
-        if (!adminSettings.allowedImageTypes.includes(file.mimetype)) {
-          return res.status(400).json({ success: false, error: `Allowed image types are: ${adminSettings.allowedImageTypes.join(', ')}` });
-        }
-        if (file.size > adminSettings.maxImageSize) {
-          return res.status(400).json({ success: false, error: `Profile picture exceeds the limit of ${adminSettings.maxImageSize / (1024 * 1024)}MB.` });
+    const cleanupNewUploads = async () => {
+      for (const item of newUploads) {
+        if (item.publicId) {
+          await cloudinary.uploader.destroy(item.publicId).catch(() => {});
         }
       }
-      if (req.files.coverPhoto) {
-        const file = req.files.coverPhoto[0];
-        if (!adminSettings.allowedImageTypes.includes(file.mimetype)) {
-          return res.status(400).json({ success: false, error: `Allowed image types are: ${adminSettings.allowedImageTypes.join(', ')}` });
-        }
-        if (file.size > adminSettings.maxImageSize) {
-          return res.status(400).json({ success: false, error: `Cover photo exceeds the limit of ${adminSettings.maxImageSize / (1024 * 1024)}MB.` });
-        }
-      }
+    };
 
-      // Perform uploads
-      if (req.files.profilePicture) {
-        const file = req.files.profilePicture[0];
-        if (user.profilePicturePublicId) {
-          await deleteCloudinaryImage(user.profilePicturePublicId);
-        }
-        const result = await uploadStream(file.buffer, 'connecthub/profiles/avatars', 'image');
-        user.profilePicture = result.secure_url;
-        user.profilePicturePublicId = result.public_id;
+    // Metadata validation
+    if (profilePicturePublicId && profilePicturePublicId !== user.profilePicturePublicId) {
+      if (profilePictureSize && profilePictureSize > 10 * 1024 * 1024) {
+        await cleanupNewUploads();
+        return res.status(400).json({ success: false, error: 'Profile picture exceeds 10MB limit.' });
       }
-      if (req.files.coverPhoto) {
-        const file = req.files.coverPhoto[0];
-        if (user.coverPhotoPublicId) {
-          await deleteCloudinaryImage(user.coverPhotoPublicId);
-        }
-        const result = await uploadStream(file.buffer, 'connecthub/profiles/covers', 'image');
-        user.coverPhoto = result.secure_url;
-        user.coverPhotoPublicId = result.public_id;
+      const format = (profilePictureFormat || '').toLowerCase();
+      const allowedFormats = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+      if (profilePictureFormat && !allowedFormats.includes(format)) {
+        await cleanupNewUploads();
+        return res.status(400).json({ success: false, error: `Profile picture format "${profilePictureFormat}" is not supported.` });
       }
     }
 
-    // Handle body URLs as fallback (only if file wasn't uploaded)
-    if (profilePictureUrl && (!req.files || !req.files.profilePicture)) {
-      let formattedUrl = profilePictureUrl.trim();
+    if (coverPhotoPublicId && coverPhotoPublicId !== user.coverPhotoPublicId) {
+      if (coverPhotoSize && coverPhotoSize > 10 * 1024 * 1024) {
+        await cleanupNewUploads();
+        return res.status(400).json({ success: false, error: 'Cover photo exceeds 10MB limit.' });
+      }
+      const format = (coverPhotoFormat || '').toLowerCase();
+      const allowedFormats = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+      if (coverPhotoFormat && !allowedFormats.includes(format)) {
+        await cleanupNewUploads();
+        return res.status(400).json({ success: false, error: `Cover photo format "${coverPhotoFormat}" is not supported.` });
+      }
+    }
+
+    // Keep track of old public ids to delete after successful save
+    const oldProfilePicPublicId = profilePicturePublicId && profilePicturePublicId !== user.profilePicturePublicId ? user.profilePicturePublicId : null;
+    const oldCoverPhotoPublicId = coverPhotoPublicId && coverPhotoPublicId !== user.coverPhotoPublicId ? user.coverPhotoPublicId : null;
+
+    // Apply updates
+    if (profilePicturePublicId) {
+      user.profilePicture = profilePicture;
+      user.profilePicturePublicId = profilePicturePublicId;
+    } else if (req.body.profilePictureUrl) {
+      let formattedUrl = req.body.profilePictureUrl.trim();
       if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
         formattedUrl = 'https://' + formattedUrl;
       }
@@ -177,8 +192,12 @@ const updateAccountDetails = async (req, res) => {
       user.profilePicture = formattedUrl;
       user.profilePicturePublicId = '';
     }
-    if (coverPhotoUrl && (!req.files || !req.files.coverPhoto)) {
-      let formattedUrl = coverPhotoUrl.trim();
+
+    if (coverPhotoPublicId) {
+      user.coverPhoto = coverPhoto;
+      user.coverPhotoPublicId = coverPhotoPublicId;
+    } else if (req.body.coverPhotoUrl) {
+      let formattedUrl = req.body.coverPhotoUrl.trim();
       if (formattedUrl && !/^https?:\/\//i.test(formattedUrl) && !formattedUrl.startsWith('/')) {
         formattedUrl = 'https://' + formattedUrl;
       }
@@ -190,6 +209,14 @@ const updateAccountDetails = async (req, res) => {
     }
 
     const updatedUser = await user.save();
+
+    // Clean up old resources since save succeeded
+    if (oldProfilePicPublicId) {
+      await deleteCloudinaryImage(oldProfilePicPublicId);
+    }
+    if (oldCoverPhotoPublicId) {
+      await deleteCloudinaryImage(oldCoverPhotoPublicId);
+    }
 
     res.json({
       success: true,
@@ -211,6 +238,12 @@ const updateAccountDetails = async (req, res) => {
       }
     });
   } catch (error) {
+    if (profilePicturePublicId && user && profilePicturePublicId !== user.profilePicturePublicId) {
+      await cloudinary.uploader.destroy(profilePicturePublicId).catch(() => {});
+    }
+    if (coverPhotoPublicId && user && coverPhotoPublicId !== user.coverPhotoPublicId) {
+      await cloudinary.uploader.destroy(coverPhotoPublicId).catch(() => {});
+    }
     console.error('Error updating account details:', error);
     res.status(500).json({ success: false, error: 'Server error updating account details' });
   }

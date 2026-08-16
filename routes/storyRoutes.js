@@ -23,7 +23,7 @@ const router = express.Router();
 router.get('/', protect, getStories);
 router.get('/sign-upload', protect, getStoryUploadSignature);
 router.post('/cleanup-media', protect, cleanupStoryMedia);
-router.post('/', protect, upload.single('storyImage'), createStory);
+router.post('/', protect, createStory);
 router.put('/:id', protect, updateStory);
 router.delete('/:id', protect, deleteStory);
 router.post('/:id/like', protect, likeStory);

@@ -177,101 +177,103 @@ const getStories = async (req, res) => {
 // @route   POST /api/stories
 // @access  Protected
 const createStory = async (req, res) => {
+const createStory = async (req, res) => {
+  let media = [];
   try {
-    const { text, backgroundColor, privacy, allowedUsers, hiddenUsers, mentions } = req.body;
-    let imageUrl = '';
-    let mediaType = 'image';
-    let cloudinaryPublicId = '';
-    const media = [];
+    const { text, backgroundColor, privacy, allowedUsers, hiddenUsers, mentions, imageUrl: bodyImageUrl, mediaType: bodyMediaType, cloudinaryPublicId: bodyPublicId } = req.body;
+    let imageUrl = bodyImageUrl || '';
+    let mediaType = bodyMediaType || 'image';
+    let cloudinaryPublicId = bodyPublicId || '';
 
-    // Handle file upload if present
-    if (req.file) {
-      const { getSettings } = require('../admin/utils/settingsHelper');
-      const settings = await getSettings();
+    if (req.body.media) {
+      media = typeof req.body.media === 'string' ? JSON.parse(req.body.media) : req.body.media;
+    }
 
-      const isVideo = req.file.mimetype.startsWith('video/');
-      const isImage = req.file.mimetype.startsWith('image/');
-
-      if (isImage && !settings.allowedImageTypes.includes(req.file.mimetype)) {
-        return res.status(400).json({
-          success: false,
-          error: `Unsupported image type: ${req.file.mimetype}. Supported image types: ${settings.allowedImageTypes.join(', ')}`
-        });
-      }
-
-      if (isVideo && !settings.allowedVideoTypes.includes(req.file.mimetype)) {
-        return res.status(400).json({
-          success: false,
-          error: `Unsupported video type: ${req.file.mimetype}. Supported video types: ${settings.allowedVideoTypes.join(', ')}`
-        });
-      }
-
-      if (!isVideo && !isImage) {
-        return res.status(400).json({
-          success: false,
-          error: `Unsupported file type: ${req.file.originalname}. Only images and videos are supported.`
-        });
-      }
-
-      if (isImage && req.file.size > settings.maxImageSize) {
-        return res.status(400).json({
-          success: false,
-          error: `Image ${req.file.originalname} exceeds the size limit of ${settings.maxImageSize / (1024 * 1024)}MB.`
-        });
-      }
-
-      if (isVideo && req.file.size > 30 * 1024 * 1024) {
-        return res.status(400).json({
-          success: false,
-          error: 'Story video size cannot exceed 30 MB.'
-        });
-      }
-
-      const resourceType = isVideo ? 'video' : 'image';
-      const folder = isVideo ? 'connecthub/stories/videos' : 'connecthub/stories/images';
-
-      const result = await uploadStream(req.file.buffer, folder, resourceType);
-
-      imageUrl = result.secure_url;
-      mediaType = result.resource_type || resourceType;
-      cloudinaryPublicId = result.public_id;
-
+    // Populate media array fallback if not sent directly but root fields are present
+    if (media.length === 0 && imageUrl) {
       media.push({
-        url: result.secure_url,
-        publicId: result.public_id,
-        resourceType: result.resource_type || resourceType,
-        format: result.format,
-        width: result.width,
-        height: result.height,
-        duration: result.duration || 0,
-        size: result.bytes
+        url: imageUrl,
+        publicId: cloudinaryPublicId,
+        resourceType: mediaType,
+        format: req.body.format || '',
+        width: req.body.width || 0,
+        height: req.body.height || 0,
+        duration: req.body.duration || 0,
+        size: req.body.size || 0
       });
-    } else if (req.body.imageUrl) {
-      imageUrl = req.body.imageUrl;
-      mediaType = req.body.mediaType || 'image';
-      cloudinaryPublicId = req.body.cloudinaryPublicId || '';
+    }
 
-      const parsedMedia = parseField(req.body.media);
-      if (parsedMedia && parsedMedia.length > 0) {
-        media.push(...parsedMedia);
-      } else {
-        media.push({
-          url: imageUrl,
-          publicId: cloudinaryPublicId,
-          resourceType: mediaType,
-          duration: req.body.duration || 0,
-          size: req.body.size || 0
-        });
+    // Backend metadata validation
+    if (media.length > 0) {
+      for (const m of media) {
+        const isVideo = m.resourceType === 'video';
+        const isImage = m.resourceType === 'image';
+
+        if (!isImage && !isVideo) {
+          // Cleanup
+          for (const item of media) {
+            if (item.publicId) {
+              await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+            }
+          }
+          return res.status(400).json({ success: false, error: 'Unsupported media type.' });
+        }
+
+        const formatLower = (m.format || '').toLowerCase();
+        if (isImage) {
+          const allowedFormats = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+          if (m.format && !allowedFormats.includes(formatLower)) {
+            for (const item of media) {
+              if (item.publicId) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: `Unsupported image format: ${m.format}` });
+          }
+          if (m.size > 10 * 1024 * 1024) {
+            for (const item of media) {
+              if (item.publicId) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Story image exceeds the 10MB size limit.' });
+          }
+        }
+
+        if (isVideo) {
+          const allowedFormats = ['mp4', 'mov', 'quicktime', 'webm'];
+          if (m.format && !allowedFormats.includes(formatLower)) {
+            for (const item of media) {
+              if (item.publicId) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: `Unsupported video format: ${m.format}` });
+          }
+          if (m.size > 30 * 1024 * 1024) {
+            for (const item of media) {
+              if (item.publicId) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Story video exceeds the 30MB size limit.' });
+          }
+          // Stories have a strict 60 seconds limit!
+          if (m.duration > 60) {
+            for (const item of media) {
+              if (item.publicId) {
+                await cloudinary.uploader.destroy(item.publicId, { resource_type: item.resourceType || 'image' }).catch(() => {});
+              }
+            }
+            return res.status(400).json({ success: false, error: 'Story video duration cannot exceed 60 seconds.' });
+          }
+        }
       }
 
-      // Backend validation for pre-uploaded media size limit
-      const isVideo = mediaType === 'video';
-      if (isVideo && media.some(m => m.size > 30 * 1024 * 1024)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Story video size cannot exceed 30 MB.'
-        });
-      }
+      // Sync legacy root fields from media[0]
+      imageUrl = media[0].url;
+      mediaType = media[0].resourceType;
+      cloudinaryPublicId = media[0].publicId;
     }
 
     if (!text && !imageUrl) {
@@ -334,6 +336,13 @@ const createStory = async (req, res) => {
 
     res.status(201).json({ success: true, data: populatedStory });
   } catch (error) {
+    if (media && media.length > 0) {
+      for (const m of media) {
+        if (m.publicId) {
+          await cloudinary.uploader.destroy(m.publicId, { resource_type: m.resourceType || 'image' }).catch(() => {});
+        }
+      }
+    }
     console.error('Error creating story:', error);
     res.status(500).json({ success: false, error: 'Server error creating story' });
   }
