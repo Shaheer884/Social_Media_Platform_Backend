@@ -110,7 +110,8 @@ const createComment = async (req, res) => {
         recipient: post.author,
         type: 'comment',
         sender: req.user.id,
-        post: post._id
+        post: post._id,
+        comment: newComment._id
       });
     }
 

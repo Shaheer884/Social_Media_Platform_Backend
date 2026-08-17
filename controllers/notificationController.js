@@ -1,5 +1,8 @@
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const Post = require('../models/Post');
+const Story = require('../models/Story');
+const Comment = require('../models/Comment');
 
 // Helper to format relationship status for sender info
 const formatNotificationSender = (n, currentUserId) => {
@@ -29,6 +32,69 @@ const formatNotificationSender = (n, currentUserId) => {
   return notificationObj;
 };
 
+// Helper to validate referenced resources (check for deletion/expiration)
+const validateResource = async (notification) => {
+  try {
+    // 1. Check sender/user existence
+    if (notification.sender) {
+      const user = await User.findById(notification.sender);
+      if (!user || user.isDeleted) {
+        return { status: 'USER_NOT_AVAILABLE', exists: false };
+      }
+    }
+
+    // 2. Check story expiration or deletion
+    if (notification.story) {
+      const story = await Story.findById(notification.story);
+      if (!story) {
+        return { status: 'STORY_DELETED', exists: false };
+      }
+      const activeTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      if (story.createdAt < activeTime) {
+        return { status: 'STORY_EXPIRED', exists: false };
+      }
+    }
+
+    // 3. Check comment deletion
+    if (
+      notification.type === 'comment' ||
+      notification.type === 'story-comment' ||
+      notification.type === 'story-reply' ||
+      notification.type === 'mention'
+    ) {
+      if (notification.comment) {
+        const comment = await Comment.findById(notification.comment);
+        if (!comment || comment.isDeleted) {
+          return { status: 'COMMENT_REMOVED', exists: false };
+        }
+      } else if (notification.type === 'comment' && notification.post) {
+        // Fallback: check active comments
+        const commentCount = await Comment.countDocuments({
+          post: notification.post,
+          author: notification.sender,
+          isDeleted: false
+        });
+        if (commentCount === 0) {
+          return { status: 'COMMENT_REMOVED', exists: false };
+        }
+      }
+    }
+
+    // 4. Check post existence
+    if (notification.post) {
+      const post = await Post.findById(notification.post);
+      if (!post || post.isDeleted) {
+        return { status: 'RESOURCE_DELETED', exists: false };
+      }
+    }
+
+    return { status: 'VALID', exists: true };
+  } catch (err) {
+    console.error('Validation error:', err);
+    return { status: 'VALID', exists: true };
+  }
+};
+
 // @desc    Get latest notifications for navbar dropdown (max 5)
 // @route   GET /api/notifications/latest
 // @access  Protected
@@ -41,6 +107,7 @@ const getLatestNotifications = async (req, res) => {
       .populate('sender', 'username fullName profilePicture followers following')
       .populate('post', 'content')
       .populate('story', 'text imageUrl backgroundColor')
+      .populate('comment', 'content isDeleted')
       .sort({ createdAt: -1 })
       .limit(5);
 
@@ -134,6 +201,7 @@ const getNotifications = async (req, res) => {
       .populate('sender', 'username fullName profilePicture followers following')
       .populate('post', 'content')
       .populate('story', 'text imageUrl backgroundColor')
+      .populate('comment', 'content isDeleted')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -165,7 +233,8 @@ const getNotificationDetails = async (req, res) => {
     })
       .populate('sender', 'username fullName profilePicture followers following')
       .populate('post', 'content')
-      .populate('story', 'text imageUrl backgroundColor');
+      .populate('story', 'text imageUrl backgroundColor')
+      .populate('comment', 'content isDeleted');
 
     if (!notification) {
       return res.status(404).json({ success: false, error: 'Notification not found' });
@@ -179,7 +248,9 @@ const getNotificationDetails = async (req, res) => {
       await notification.save();
     }
 
+    const validation = await validateResource(notification);
     const formattedNotification = formatNotificationSender(notification, req.user.id);
+    formattedNotification.resourceValidation = validation;
 
     res.json({ success: true, data: formattedNotification });
   } catch (error) {
