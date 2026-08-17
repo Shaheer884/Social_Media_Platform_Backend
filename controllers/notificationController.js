@@ -35,17 +35,22 @@ const formatNotificationSender = (n, currentUserId) => {
 // Helper to validate referenced resources (check for deletion/expiration)
 const validateResource = async (notification) => {
   try {
+    const senderId = notification.populated ? notification.populated('sender') : notification.sender;
+    const storyId = notification.populated ? notification.populated('story') : notification.story;
+    const commentId = notification.populated ? notification.populated('comment') : notification.comment;
+    const postId = notification.populated ? notification.populated('post') : notification.post;
+
     // 1. Check sender/user existence
-    if (notification.sender) {
-      const user = await User.findById(notification.sender);
+    if (senderId) {
+      const user = await User.findById(senderId);
       if (!user || user.isDeleted) {
         return { status: 'USER_NOT_AVAILABLE', exists: false };
       }
     }
 
     // 2. Check story expiration or deletion
-    if (notification.story) {
-      const story = await Story.findById(notification.story);
+    if (storyId) {
+      const story = await Story.findById(storyId);
       if (!story) {
         return { status: 'STORY_DELETED', exists: false };
       }
@@ -62,16 +67,16 @@ const validateResource = async (notification) => {
       notification.type === 'story-reply' ||
       notification.type === 'mention'
     ) {
-      if (notification.comment) {
-        const comment = await Comment.findById(notification.comment);
+      if (commentId) {
+        const comment = await Comment.findById(commentId);
         if (!comment || comment.isDeleted) {
           return { status: 'COMMENT_REMOVED', exists: false };
         }
-      } else if (notification.type === 'comment' && notification.post) {
+      } else if (notification.type === 'comment' && postId) {
         // Fallback: check active comments
         const commentCount = await Comment.countDocuments({
-          post: notification.post,
-          author: notification.sender,
+          post: postId,
+          author: senderId,
           isDeleted: false
         });
         if (commentCount === 0) {
@@ -81,8 +86,8 @@ const validateResource = async (notification) => {
     }
 
     // 4. Check post existence
-    if (notification.post) {
-      const post = await Post.findById(notification.post);
+    if (postId) {
+      const post = await Post.findById(postId);
       if (!post || post.isDeleted) {
         return { status: 'RESOURCE_DELETED', exists: false };
       }
