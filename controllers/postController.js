@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const Comment = require('../models/Comment');
 const mongoose = require('mongoose');
+const { createNotification } = require('../services/notificationPreferenceService');
 const Image = require('../models/Image');
 const { cloudinary, uploadStream } = require('../config/cloudinary');
 
@@ -652,7 +653,7 @@ const likePost = async (req, res) => {
 
     // Create Notification (only if user likes someone else's post)
     if (post.author.toString() !== req.user.id) {
-      await Notification.create({
+      await createNotification({
         recipient: post.author,
         type: 'like',
         sender: req.user.id,

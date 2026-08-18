@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Image = require('../models/Image');
 const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
+const { createNotification } = require('../services/notificationPreferenceService');
 const { cloudinary, uploadStream } = require('../config/cloudinary');
 
 const parseField = (field) => {
@@ -321,7 +322,7 @@ const createStory = async (req, res) => {
         story: story._id
       });
       if (!existingNoti) {
-        await Notification.create({
+        await createNotification({
           recipient: mentionedId,
           sender: req.user.id,
           type: 'story-mention',
@@ -394,7 +395,7 @@ const updateStory = async (req, res) => {
           story: story._id
         });
         if (!existingNoti) {
-          await Notification.create({
+          await createNotification({
             recipient: mentionedId,
             sender: req.user.id,
             type: 'story-mention',
@@ -480,7 +481,7 @@ const likeStory = async (req, res) => {
 
     // Create Notification (only if user likes someone else's story)
     if (story.user.toString() !== req.user.id) {
-      await Notification.create({
+      await createNotification({
         recipient: story.user,
         type: 'story-like',
         sender: req.user.id,
@@ -562,7 +563,7 @@ const commentStory = async (req, res) => {
 
     // Create Notification (only if user comments on someone else's story)
     if (story.user.toString() !== req.user.id) {
-      await Notification.create({
+      await createNotification({
         recipient: story.user,
         type: 'story-comment',
         sender: req.user.id,
@@ -697,7 +698,7 @@ const replyStory = async (req, res) => {
 
     // Create Notification
     if (story.user.toString() !== req.user.id) {
-      await Notification.create({
+      await createNotification({
         recipient: story.user,
         type: 'story-reply',
         sender: req.user.id,

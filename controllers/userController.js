@@ -4,6 +4,7 @@ const Notification = require('../models/Notification');
 const Post = require('../models/Post');
 const Image = require('../models/Image');
 const Comment = require('../models/Comment');
+const { createNotification } = require('../services/notificationPreferenceService');
 const { cloudinary, uploadStream } = require('../config/cloudinary');
 
 // @desc    Get user profile by ID
@@ -359,7 +360,7 @@ const followUser = async (req, res) => {
       await userToFollow.save();
 
       // Create Notification for follow request
-      await Notification.create({
+      await createNotification({
         recipient: userToFollow._id,
         type: 'follow-request',
         sender: currentUser._id,
@@ -381,7 +382,7 @@ const followUser = async (req, res) => {
     await userToFollow.save();
 
     // Create Notification
-    await Notification.create({
+    await createNotification({
       recipient: userToFollow._id,
       type: 'follow',
       sender: currentUser._id

@@ -2,6 +2,7 @@ const User = require('../models/User');
 const BirthdayWish = require('../models/BirthdayWish');
 const BirthdayGift = require('../models/BirthdayGift');
 const Notification = require('../models/Notification');
+const { createNotification } = require('../services/notificationPreferenceService');
 
 // Helper function to check if requester can see target's birthday
 const canSeeBirthday = (requesterId, targetUser) => {
@@ -218,7 +219,7 @@ const postWish = async (req, res) => {
 
     // Create Notification (if not wishing self)
     if (recipientId !== req.user.id) {
-      await Notification.create({
+      await createNotification({
         recipient: recipientId,
         sender: req.user.id,
         type: 'birthday-wish',
@@ -267,7 +268,7 @@ const postGift = async (req, res) => {
 
     // Create Notification (if not gifting self)
     if (recipientId !== req.user.id) {
-      await Notification.create({
+      await createNotification({
         recipient: recipientId,
         sender: req.user.id,
         type: 'birthday-gift',

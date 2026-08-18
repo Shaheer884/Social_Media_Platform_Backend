@@ -143,6 +143,28 @@ const UserSchema = new mongoose.Schema({
     storyNotifications: { type: Boolean, default: true },
     postNotifications: { type: Boolean, default: true }
   },
+  notificationSettings: {
+    likes: { type: Boolean, default: true },
+    comments: { type: Boolean, default: true },
+    commentReplies: { type: Boolean, default: true },
+    storyLikes: { type: Boolean, default: true },
+    storyReplies: { type: Boolean, default: true },
+    storyMentions: { type: Boolean, default: true },
+    postMentions: { type: Boolean, default: true },
+    tags: { type: Boolean, default: true },
+    followers: { type: Boolean, default: true },
+    friendRequests: { type: Boolean, default: true },
+    friendRequestAccepted: { type: Boolean, default: true },
+    messages: { type: Boolean, default: true },
+    birthdayReminders: { type: Boolean, default: true },
+    birthdayWishes: { type: Boolean, default: true },
+    loginStreakReminder: { type: Boolean, default: true },
+    friendStreakReminder: { type: Boolean, default: true },
+    adminAnnouncements: { type: Boolean, default: true },
+    platformUpdates: { type: Boolean, default: true },
+    pushNotifications: { type: Boolean, default: true },
+    emailNotifications: { type: Boolean, default: false }
+  },
   commentSettings: {
     whoCanComment: {
       type: String,

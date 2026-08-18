@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const Post = require('../../models/Post');
 const Comment = require('../../models/Comment');
 const Notification = require('../../models/Notification');
+const { createNotification } = require('../../services/notificationPreferenceService');
 const Story = require('../../models/Story');
 const { cloudinary, uploadStream } = require('../../config/cloudinary');
 
@@ -553,7 +554,7 @@ const acceptFollowRequest = async (req, res) => {
     await requester.save();
 
     // Create Notification
-    await Notification.create({
+    await createNotification({
       recipient: requesterId,
       type: 'follow',
       sender: req.user.id,

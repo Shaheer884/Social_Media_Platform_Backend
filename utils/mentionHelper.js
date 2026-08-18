@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const { createNotification } = require('../services/notificationPreferenceService');
 
 /**
  * Parses text for @username mentions, verifies they are mutual friends of the sender,
@@ -48,7 +49,7 @@ const handleMentions = async (text, senderId, referenceObj, message) => {
         });
 
         if (!existing) {
-          await Notification.create({
+          await createNotification({
             recipient: user._id,
             sender: senderId,
             type: 'mention',

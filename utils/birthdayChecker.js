@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const sendEmail = require('./sendEmail');
+const { createNotification, shouldSendEmail } = require('../services/notificationPreferenceService');
 
 const checkAndSendBirthdayNotifications = async () => {
   try {
@@ -31,29 +32,31 @@ const checkAndSendBirthdayNotifications = async () => {
 
         if (!selfNotifExists) {
           // Create in-app notification
-          await Notification.create({
+          await createNotification({
             recipient: user._id,
             sender: user._id,
             type: 'birthday',
             createdAt: today
           });
 
-          // Send email
-          await sendEmail({
-            to: user.email,
-            subject: `🎉 Happy Birthday, ${user.fullName}!`,
-            text: `Happy Birthday, ${user.fullName}! 🎂\n\nWishing you a wonderful day filled with love and laughter. Thank you for being a part of ConnectHub!\n\nBest wishes,\nThe ConnectHub Team`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-                <h2 style="color: #6366f1; text-align: center;">🎉 Happy Birthday, ${user.fullName}! 🎂</h2>
-                <p>Dear ${user.fullName},</p>
-                <p>Wishing you a wonderful day filled with love, laughter, and happiness. Thank you for being a valued member of the <strong>ConnectHub</strong> community!</p>
-                <p>Have an amazing day!</p>
-                <br />
-                <p style="color: #888; font-size: 0.9em;">Best wishes,<br />The ConnectHub Team</p>
-              </div>
-            `
-          });
+          // Send email (only if user enabled email notifications)
+          if (await shouldSendEmail(user._id)) {
+            await sendEmail({
+              to: user.email,
+              subject: `🎉 Happy Birthday, ${user.fullName}!`,
+              text: `Happy Birthday, ${user.fullName}! 🎂\n\nWishing you a wonderful day filled with love and laughter. Thank you for being a part of ConnectHub!\n\nBest wishes,\nThe ConnectHub Team`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+                  <h2 style="color: #6366f1; text-align: center;">🎉 Happy Birthday, ${user.fullName}! 🎂</h2>
+                  <p>Dear ${user.fullName},</p>
+                  <p>Wishing you a wonderful day filled with love, laughter, and happiness. Thank you for being a valued member of the <strong>ConnectHub</strong> community!</p>
+                  <p>Have an amazing day!</p>
+                  <br />
+                  <p style="color: #888; font-size: 0.9em;">Best wishes,<br />The ConnectHub Team</p>
+                </div>
+              `
+            });
+          }
         }
 
         // 2. Notify friends (mutual followers)
@@ -75,7 +78,7 @@ const checkAndSendBirthdayNotifications = async () => {
             });
 
             if (!friendNotifExists) {
-              await Notification.create({
+              await createNotification({
                 recipient: friend._id,
                 sender: user._id,
                 type: 'birthday',

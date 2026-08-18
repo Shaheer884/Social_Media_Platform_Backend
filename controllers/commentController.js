@@ -2,6 +2,7 @@ const Comment = require('../models/Comment');
 const Post = require('../models/Post');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const { createNotification } = require('../services/notificationPreferenceService');
 
 // @desc    Get comments for a post
 // @route   GET /api/posts/:id/comments
@@ -106,7 +107,7 @@ const createComment = async (req, res) => {
 
     // Create Notification (only if user comments on someone else's post)
     if (post.author.toString() !== req.user.id) {
-      await Notification.create({
+      await createNotification({
         recipient: post.author,
         type: 'comment',
         sender: req.user.id,
