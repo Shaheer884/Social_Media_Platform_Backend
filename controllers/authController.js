@@ -180,6 +180,20 @@ const loginUser = async (req, res) => {
     user.lastActiveAt = new Date();
     await user.save();
 
+    // Log login activity
+    try {
+      const activityLogService = require('../admin/services/activityLogService');
+      await activityLogService.logAction({
+        adminId: user._id,
+        adminName: user.fullName || user.username,
+        action: user.role === 'admin' ? 'Admin Login' : 'User Login',
+        target: user.role === 'admin' ? 'Admin Panel' : 'Platform',
+        ipAddress: req.ip
+      });
+    } catch (logError) {
+      console.error('Failed to log login action in activity logs:', logError);
+    }
+
     res.json({
       success: true,
       data: {
