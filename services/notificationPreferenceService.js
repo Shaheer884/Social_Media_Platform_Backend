@@ -94,8 +94,22 @@ const createNotification = async (data) => {
   const { recipient, type } = data;
   const isEnabled = await shouldCreateNotification(recipient, type);
   if (isEnabled) {
-    // Return standard created notification model instance
-    return await Notification.create(data);
+    // Save created notification instance
+    const notification = await Notification.create(data);
+    
+    // Asynchronously check and send push notification
+    shouldSendPush(recipient).then((pushEnabled) => {
+      if (pushEnabled) {
+        const { sendPushNotification } = require('../push/pushService');
+        sendPushNotification(recipient, notification).catch((err) => {
+          console.error('Error dispatching push notification:', err);
+        });
+      }
+    }).catch((err) => {
+      console.error('Error in shouldSendPush check:', err);
+    });
+
+    return notification;
   }
   return null;
 };
