@@ -64,6 +64,18 @@ const getBrowserAndDevice = (userAgentString) => {
 };
 
 /**
+ * Resolves the client application base URL dynamically based on environment
+ */
+const getClientBaseUrl = () => {
+  if (process.env.CLIENT_URL) {
+    return process.env.CLIENT_URL;
+  }
+  return process.env.NODE_ENV === 'production'
+    ? 'https://social-media-platform-frontend-nine.vercel.app'
+    : 'http://localhost:5173';
+};
+
+/**
  * Converts a relative path into an absolute client URL for notifications
  */
 const getAbsoluteUrl = (pathStr) => {
@@ -71,7 +83,7 @@ const getAbsoluteUrl = (pathStr) => {
   if (pathStr.startsWith('http://') || pathStr.startsWith('https://')) {
     return pathStr;
   }
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const clientUrl = getClientBaseUrl();
   return `${clientUrl}${pathStr.startsWith('/') ? '' : '/'}${pathStr}`;
 };
 
@@ -228,14 +240,15 @@ const buildPayload = (notification) => {
     badge,
     image,
     timestamp: notification.createdAt ? new Date(notification.createdAt).getTime() : Date.now(),
-    url: getAbsoluteUrl(route),
     actions,
     data: {
-      url: getAbsoluteUrl(route),
       type,
       targetId: notification.post?._id || notification.story?._id || notification.comment?._id || null,
+      route, // Send relative route, e.g. "/post/123"
+      notificationId: notification._id || null,
+      createdAt: notification.createdAt || new Date(),
       actionsUrls: Object.fromEntries(
-        Object.entries(actionsUrls).map(([k, v]) => [k, getAbsoluteUrl(v)])
+        Object.entries(actionsUrls).map(([k, v]) => [k, v]) // Send relative paths!
       )
     }
   };
