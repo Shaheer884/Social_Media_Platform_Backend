@@ -25,6 +25,7 @@ const updateSettings = async (updateData) => {
   if (updateData.allowedImageTypes !== undefined) settings.allowedImageTypes = updateData.allowedImageTypes;
   if (updateData.allowedVideoTypes !== undefined) settings.allowedVideoTypes = updateData.allowedVideoTypes;
   if (updateData.defaultProfileImage !== undefined) settings.defaultProfileImage = updateData.defaultProfileImage;
+  if (updateData.adminTheme !== undefined) settings.adminTheme = updateData.adminTheme;
 
   await settings.save();
   return settings;

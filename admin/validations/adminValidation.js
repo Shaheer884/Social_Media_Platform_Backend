@@ -7,6 +7,7 @@ const validateSettings = [
   check('maintenanceMode', 'Maintenance mode must be a boolean').optional().isBoolean(),
   check('allowRegistration', 'Allow registration must be a boolean').optional().isBoolean(),
   check('requireEmailVerification', 'Require email verification must be a boolean').optional().isBoolean(),
+  check('adminTheme', 'Admin Theme must be a valid string').optional().trim().notEmpty(),
 ];
 
 const validateBroadcast = [

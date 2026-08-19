@@ -40,6 +40,10 @@ const PlatformSettingsSchema = new mongoose.Schema({
   defaultProfileImage: {
     type: String,
     default: '/uploads/default-avatar.png'
+  },
+  adminTheme: {
+    type: String,
+    default: 'default'
   }
 }, { timestamps: true });
 
