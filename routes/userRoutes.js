@@ -19,6 +19,10 @@ const router = express.Router();
 // User Profile routes
 router.get('/explore/search', protect, searchUsers);
 router.get('/explore/suggestions', protect, getFollowSuggestions);
+router.get('/username/:username', protect, (req, res, next) => {
+  req.params.id = req.params.username;
+  next();
+}, getUserProfile);
 router.get('/:id', protect, getUserProfile);
 router.delete('/:id', protect, deleteUserAccount);
 router.put(
