@@ -97,8 +97,8 @@ const testNotification = async (req, res) => {
     const testPayload = {
       title: '🔔 ConnectHub Test Notification',
       body: `Hello ${req.user.fullName}! Your real-time push notification system is working perfectly.`,
-      icon: req.user.profilePicture ? req.user.profilePicture : '/icons/icon-192x192.png',
-      badge: '/icons/icon-72x72.png',
+      icon: pushService.getAbsoluteUrl(req.user.profilePicture || '/icons/icon-192x192.png'),
+      badge: pushService.getAbsoluteUrl('/icons/badge-72x72.png'),
       timestamp: Date.now(),
       url: '/',
       actions: [

@@ -76,15 +76,31 @@ const getClientBaseUrl = () => {
 };
 
 /**
- * Converts a relative path into an absolute client URL for notifications
+ * Resolves the backend application base URL dynamically based on environment
+ */
+const getServerBaseUrl = () => {
+  if (process.env.SERVER_URL) {
+    return process.env.SERVER_URL;
+  }
+  if (process.env.BACKEND_URL) {
+    return process.env.BACKEND_URL;
+  }
+  return process.env.NODE_ENV === 'production'
+    ? 'https://social-media-platform-backend.vercel.app'
+    : 'http://localhost:5000';
+};
+
+/**
+ * Converts a relative path into an absolute client or server URL for notifications
  */
 const getAbsoluteUrl = (pathStr) => {
   if (!pathStr) return undefined;
   if (pathStr.startsWith('http://') || pathStr.startsWith('https://')) {
     return pathStr;
   }
-  const clientUrl = getClientBaseUrl();
-  return `${clientUrl}${pathStr.startsWith('/') ? '' : '/'}${pathStr}`;
+  const isUpload = pathStr.startsWith('/uploads');
+  const baseUrl = isUpload ? getServerBaseUrl() : getClientBaseUrl();
+  return `${baseUrl}${pathStr.startsWith('/') ? '' : '/'}${pathStr}`;
 };
 
 /**
@@ -102,7 +118,7 @@ const buildPayload = (notification) => {
   let actionsUrls = {};
 
   const icon = getAbsoluteUrl(notification.sender?.profilePicture || '/icons/icon-192x192.png');
-  const badge = getAbsoluteUrl('/icons/icon-72x72.png');
+  const badge = getAbsoluteUrl('/icons/badge-72x72.png');
 
   switch (type) {
     case 'like':
@@ -427,5 +443,6 @@ module.exports = {
   sendAdminBroadcast,
   validateSubscription,
   cleanupExpiredSubscriptions,
-  buildPayload
+  buildPayload,
+  getAbsoluteUrl
 };

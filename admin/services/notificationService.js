@@ -41,14 +41,15 @@ const broadcastAnnouncement = async (adminId, title, message, announcementType) 
       if (pushRecipients.length > 0) {
         const adminUser = await User.findById(adminId).select('fullName profilePicture');
         const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const serverUrl = process.env.SERVER_URL || process.env.BACKEND_URL || (process.env.NODE_ENV === 'production' ? 'https://social-media-platform-backend.vercel.app' : 'http://localhost:5000');
         
         const payload = {
           title: `📢 Announcement: ${title}`,
           body: message,
           icon: adminUser?.profilePicture 
-            ? (adminUser.profilePicture.startsWith('http') ? adminUser.profilePicture : `${clientUrl}${adminUser.profilePicture}`)
+            ? (adminUser.profilePicture.startsWith('http') ? adminUser.profilePicture : `${serverUrl}${adminUser.profilePicture.startsWith('/') ? '' : '/'}${adminUser.profilePicture}`)
             : `${clientUrl}/icons/icon-192x192.png`,
-          badge: `${clientUrl}/icons/icon-72x72.png`,
+          badge: `${clientUrl}/icons/badge-72x72.png`,
           timestamp: Date.now(),
           url: `${clientUrl}/notifications`,
           actions: [
