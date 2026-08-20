@@ -10,13 +10,15 @@ const {
   getFollowSuggestions,
   searchUsers,
   deleteUserAccount,
-  removeFollower
+  removeFollower,
+  getPublicUserProfile
 } = require('../controllers/userController');
 const upload = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
 
 // User Profile routes
+router.get('/profile/username/:username', getPublicUserProfile);
 router.get('/explore/search', protect, searchUsers);
 router.get('/explore/suggestions', protect, getFollowSuggestions);
 router.get('/username/:username', protect, (req, res, next) => {

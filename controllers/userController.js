@@ -774,6 +774,60 @@ const removeFollower = async (req, res) => {
   }
 };
 
+// @desc    Get public user profile for QR scan / deep links
+// @route   GET /api/users/profile/username/:username
+// @access  Public
+const getPublicUserProfile = async (req, res) => {
+  try {
+    const username = req.params.username.toLowerCase();
+    const user = await User.findOne({ username, isDeleted: { $ne: true } });
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const postCount = await Post.countDocuments({ author: user._id, isDeleted: { $ne: true } });
+
+    const userProfile = {
+      _id: user._id,
+      username: user.username,
+      fullName: user.fullName,
+      bio: user.bio,
+      location: user.location,
+      profilePicture: user.profilePicture,
+      coverPhoto: user.coverPhoto,
+      followersCount: user.followers.length,
+      followingCount: user.following.length,
+      postCount: postCount,
+      isVerified: user.isVerified,
+      isPrivate: user.isPrivate,
+      createdAt: user.createdAt
+    };
+
+    let posts = [];
+    if (!user.isPrivate) {
+      posts = await Post.find({
+        author: user._id,
+        audience: 'Public',
+        isDeleted: { $ne: true }
+      })
+      .populate('author', 'username fullName profilePicture isVerified')
+      .sort({ createdAt: -1 });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: userProfile,
+        posts
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching public user profile:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
 module.exports = {
   getUserProfile,
   updateUserProfile,
@@ -784,5 +838,7 @@ module.exports = {
   getFollowSuggestions,
   searchUsers,
   deleteUserAccount,
-  removeFollower
+  removeFollower,
+  getPublicUserProfile
 };
+
